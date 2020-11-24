@@ -1,0 +1,43 @@
+---
+title: "Analysis of aDNA WW1 soldier"
+author: "Wang Ping"
+date: "11/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval=FALSE)
+```
+
+## Server access
+Command to login to the server (make sure that the VPN is connected)
+```{bash server_access}
+ssh -Y s5119482@10.250.250.3
+# or
+ssh –Y s5119482@gc-prd-hpclogin1.rcs.griffith.edu.au
+```  
+
+Install conda environment to setup bioinformatics tools needed
+```{bash conda_setup}
+# copy startup files (allow internet access)
+cp /scratch/aDNA/startup_files/.* ~/
+# download conda
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+# install conda
+bash Miniconda3-latest-Linux-x86_64.sh 
+# initialise conda
+source ~/.bashrc
+# install extra packages to the base environment
+conda install libgcc gnutls libuuid readline cmake git tmux libgfortran parallel gawk pigz rename 
+```
+
+### Useful Linux Commands
+1. List folder content - `ls`, or `ls -lha` to display also hidden files in a detailed format  
+2. Change directory - `cd`, e.g. `cd ~` (to home folder)
+3. Option+C - force stop all the commands  
+4. Create new directories - `mkdir`, e.g. `mkdir analysis_WW1`, the folder name will be analysis_WW1  
+5. Check (https://www.educative.io/blog/bash-shell-command-cheat-sheet) for 25 most common commands
+6. `tmux` - start a new session; `Ctrl+B c` to create a new tab (window); `Ctrl+B n` to move to the next tab; `Ctrl+B p` to move to the previous tab; `Ctrl+B [` for scroll mode (use keyboard arrows, `q` to exit mode); `Ctrl+B d` to detach a session; and `tmux a -t0` to return to an active session (who's number is 0).  (see [cheatsheet](https://gist.github.com/MohamedAlaa/2961058))
+
+
+
