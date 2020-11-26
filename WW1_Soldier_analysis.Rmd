@@ -7,9 +7,51 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, eval=FALSE)
+# load custom functions from github
+devtools::source_gist("7f63547158ecdbacf31b54a58af0d1cc", filename = "util.R")
+# options(width = 180)
+cran_packages <- c("dplyr", "knitr", "pander","kableExtra", "captioner", "DT", "htmltab",
+                   "paletteer", "dartR", "poppr")
+pacman::p_load(char=cran_packages, repos="https://cran.rstudio.com/")
+custom_font="consolas"
+fontFmt = function(x,font="consolas"){
+  #outputFormat = knitr::opts_knit$get("rmarkdown.pandoc.to")
+  #if (outputFormat == 'html')
+  formatted_text <- sprintf("<font face='%s'>%s</font>",font,x)
+  return(formatted_text)
+  #else
+  #  x
+}
 ```
 
-## Server access
+# Analysis Pipeline
+## General overview:
+
+1. Data pre-processing:  
+    a. Quality check  
+    b. Adaptor trimming  
+    c. Post-trim quality check  
+2. Mapping reads to a reference genome (keep unmapped)  
+3. Reads deduplication  
+4. Variant calling and filtration  
+5. Produce variant statistics and assessment  
+6. Match SNPs with existing databases  
+
+### Ancient DNA specific considerations
+1. Assess insert size with BBmerge/BBmap (see [this thread](https://www.biostars.org/p/284302/))  
+2. Align to the Human genome (GRCh38) with bwa/Bowtie2  
+3. Extract alignment to Mitochondrial genome and Y chromosomes to check levels of alignment and assign haplogroups   
+4. Assess alignment with Qualimap (Maybe treat as single-end if too many pairs are being dropped).  
+5. Assess DNA damage with MapDamage   
+6. Call SNPs from nuclear genome  
+
+
+## Methods
+DNA-Seq data processing, mapping and variant calling were performed on the _Griffith University HPC Cluster_ (using Torque PBS scheduler), following the methods specified by (see details in Appendix 1), .  
+Detailed methods, including code for running each of the analyses steps are provided in the associated [WWR_analysis GitHub repository](https://github.com/WangPingWong/WWR_analysis).
+
+
+### Server access
 Command to login to the server (make sure that the VPN is connected)
 ```{bash server_access}
 ssh -Y s5119482@10.250.250.3
@@ -17,6 +59,7 @@ ssh -Y s5119482@10.250.250.3
 ssh –Y s5119482@gc-prd-hpclogin1.rcs.griffith.edu.au
 ```  
 
+### Setup Bioinformatics Environment
 Install conda environment to setup bioinformatics tools needed
 ```{bash conda_setup}
 # copy startup files (allow internet access)
@@ -29,6 +72,25 @@ bash Miniconda3-latest-Linux-x86_64.sh
 source ~/.bashrc
 # install extra packages to the base environment
 conda install libgcc gnutls libuuid readline cmake git tmux libgfortran parallel gawk pigz rename 
+# update conda
+conda update --all -y -n base
+
+# install bioinformatics software
+CONDA_NAME=aDNA #align for alignments and popgen for popgen analysis
+conda create -y -n $CONDA_NAME
+conda install -y -n $CONDA_NAME blast fastqc multiqc bioawk bbmap bowtie2 bwa bwa-mem2 cutadapt trimmomatic samtools samblaster biobambam sambamba=0.6.6 picard stack mapdamage2 nextflow qualimap 
+# install sequenceTools (requires stack to be installed)
+stack install sequenceTools --resolver nightly
+# create an environment to process and analyse variants
+conda create -n snp_tools vcftools bcftools gatk4 freebayes snpsift stack plink admixtools admixture structure eigensoft # scikit-learn=0.18.2
+# conda create -n finestructure finestructure fineradstructure 
+# conda create -n faststructure faststructure
+# activate environment and cleanup
+conda activate $CONDA_NAME
+# Clean extra space
+conda clean -y --all
+
+
 ```
 
 ### Useful Linux Commands
@@ -39,5 +101,176 @@ conda install libgcc gnutls libuuid readline cmake git tmux libgfortran parallel
 5. Check (https://www.educative.io/blog/bash-shell-command-cheat-sheet) for 25 most common commands
 6. `tmux` - start a new session; `Ctrl+B c` to create a new tab (window); `Ctrl+B n` to move to the next tab; `Ctrl+B p` to move to the previous tab; `Ctrl+B [` for scroll mode (use keyboard arrows, `q` to exit mode); `Ctrl+B d` to detach a session; and `tmux a -t0` to return to an active session (who's number is 0).  (see [cheatsheet](https://gist.github.com/MohamedAlaa/2961058))
 
+### Running the Analysis Pipeline
+#### Downloading reference genome files
+Download raw `.fastq.gz` files from NECTAR server and genome reference files from NCBI:
+1. Dingo (Sandy) - [GCF_003254725.2](https://www.ncbi.nlm.nih.gov/assembly/GCF_003254725.2)  
+2. Dingo (Cooinda) - [GCF_012295265.1](https://www.ncbi.nlm.nih.gov/assembly/GCF_012295265.1/)  
+3. Dingo mitochondrion genome [MH035676.1](https://www.ncbi.nlm.nih.gov/nucleotide/MH035676.1)  
+4. Dog CanFam3.1 [GCF_000002285.3](https://www.ncbi.nlm.nih.gov/assembly/GCF_000002285.3/)
+_Make sure that the assembly (`.fna`) and annotation (`.gff`) files match the same assembly_
+
+```{bash retrieve_files}
+mkdir -p ~/aDNA/Human/reference_genomes  && cd ~/aDNA/Human/reference_genomes # on new GU HPC (shared aDNA folder)
+
+# download from ENSEMBL (GRCh38.p13)
+wget wget ftp://ftp.ensembl.org/pub/release-101/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+wget ftp://ftp.ensembl.org/pub/release-101/gff3/homo_sapiens/Homo_sapiens.GRCh38.101.gff3.gz
+
+```
+
+#### Mapping to the reference genome 
+The quality-trimmed reads were mapped to the Human reference genome, [GRCh38.p13](https://asia.ensembl.org/Homo_sapiens/Info/Index) using `r fontFmt("Bowtie 2")` v2.3.5.1, while adding Read Group information [@langmeadFastGappedreadAlignment2012]. `r fontFmt("Bowtie 2")` was run with custom parameteres for alignment of ancient DNA reads: local mode (`--local`), allowing a single mismatch in the mapping seed (`-N 1`) and a maximum mismatch penalty of 4 (`--mp 4`) [@cahillGenomicEvidenceWidespread2018]. The resulting alignments were processed to mark duplicate reads with `bamsormadup` from `r fontFmt("biobambam2")` [@tischlerBiobambamToolsRead2014].  
+To improve performance, temporary files were written to a local  `lscratch` folder on the computing node. Mapping statistics (rate, quality and coverage) were evaluated with `r fontFmt("Qualimap 2")` v.2.2.2-dev [@okonechnikov_qualimap_2016].
+
+```{bash aDNA_bt2}
+CONDA_NAME=aDNA
+conda activate $CONDA_NAME
+# Prepare the variables that will be used.
+DATE=`date +%d_%m_%Y`
+BATCH=aDNA
+ALIGNER=BT2
+RUN="${BATCH}_${ALIGNER}_process_${DATE}" # day of run was 26_11_2020
+# Create tmp folder
+TMP_DIR=$HOME/lscratch/tmp/$RUN # && mkdir -p $TMP_DIR # on GU HPC
+# Create working folder for the run
+mkdir -p ~/aDNA/Dingo/${RUN} # on GU HPC
+cd !$
+REF_DIR="$HOME/aDNA/Human/reference_genomes" # on GU HPC
+REF="GRCh38"
+[ ! -s "$REF_DIR/$REF.fasta" ] && pigz -cd $(find $REF_DIR -name "*$REF*.f*a.gz") > $REF_DIR/$REF.fasta
+[ ! -s "$REF_DIR/$REF.gff" ] && pigz -cd $(find $REF_DIR -name "*$REF*.gff.gz") > $REF_DIR/$REF.gff
+#cat $REF_DIR/Dingo_MT_MH035676.1.fasta >> $REF_DIR/$REF.fasta
+
+GENOME="$REF_DIR/$REF"
+READ_LENGTH=150
+NCORES=16 # use maximum 16!
+NNODES=1
+RGPM=HiSeqX 
+RGPL=ILLUMINA
+RGPU=unit1
+RGCN=AGRF
+FQ_DIR="$HOME/aDNA/Human/WWR"
+# mkdir trimmed_reads
+ln -s $FQ_DIR/*.fastq.gz ./
+
+# Prepare PBS script
+echo '#!/bin/bash 
+#PBS -V
+#PBS -l' "select=${NNODES}:ncpus=${NCORES}:mem=48GB,walltime=30:00:00
+#PBS -W umask=007
+
+mkdir -p $TMP_DIR
+cd \$PBS_O_WORKDIR
+source ~/.bashrc
+conda activate $CONDA_NAME
+gawk -v ARRAY_IND=\$PBS_ARRAY_INDEX 'NR==ARRAY_IND' \${CMDS_FILE} | bash
+rm -rf $TMP_DIR" > ${RUN}.pbspro
+
+# Build bowtie2 index
+ALIGN_IDX_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; bowtie2-build ${GENOME}.fasta ${GENOME}" | qsub -V -l select=1:ncpus=${NCORES}:mem=16GB,walltime=3:00:00 -N index-ref | egrep -o "^[0-9]+") # 70759.pbsserver
+# BWA_IDX_ID=$( echo $BWA_IDX_ID | grep -P -o '[\d\.]+(?!\.\w)' | sed 's/\.$//' )
+
+# bwa mem -M  -t 2 ${REF_GENOME} ${INPUT_DIR}/${sample}.fq.gz | samtools view -bS - > ${OUTPUTDIR}/${sample}.bam
+# Perform adapter trimming, mapping, deduplication, add RG, sort and index 
+find ./ -maxdepth 1 -name "*_1.f*q.gz" | sort | gawk -F"\t" -v fq_dir=$FQ_DIR -v ref=$REF -v ref_dir=$REF_DIR -v RGPL=$RGPL -v RGPU=$RGPU -v RGCN=$RGCN -v RGPM=$RGPM -v ncores=$NCORES -v mapper=${ALIGNER} -v tmpdir=$TMP_DIR '{n=split($1,a,"/"); infile2=gensub("_1\\.", "_2.", "1", $1); sample_id=gensub("_1.f.*q.gz", "", "1", a[n]); printf("bowtie2 --local -p %s --mp 4 -N 1 -x %s/%s -1 %s -2 %s --un-conc-gz %s_unmapped_pairs.fq.gz --rg-id %s --rg SM:%s --rg LB:%s --rg PL:%s --rg PM:%s --rg PU:%s --rg CN:%s | bamsormadup level=8 templevel=3 tmpfile=%s/%s.tmp M=%s.dedup.metrics indexfilename=%s.%s.%s.dedup.rg.csorted.bai > %s.%s.%s.dedup.rg.csorted.bam\n", ncores, ref_dir,ref, $1, infile2, sample_id, sample_id, sample_id, sample_id, RGPL,RGPM, RGPU, RGCN, tmpdir, sample_id, sample_id, sample_id,mapper,ref, sample_id,mapper,ref)}' > ${RUN}.bash
+
+# Run on parallel nodes (faster and preferred)
+# fix picard -XX:ParallelGCThreads=n
+# Run the commands 
+JOB_NAME=${RUN}
+JOBS_NUM=$( cat ${RUN}.bash | wc -l )
+ALIGN_ID=$( qsub -J1-$JOBS_NUM -N ${JOB_NAME:0:11} -W depend=afterok:$ALIGN_IDX_ID -vCMDS_FILE=${RUN}.bash  ${RUN}.pbspro | egrep -o "^[0-9]+") 
+#BWA_ID=$( echo $BWA_ID | grep -P -o '[\d\.]+(?!\.\w)' | sed 's/\.$//'  )
+# Record the array ID: 70761[] on GU HPC
+
+# Run qualimap on bam files (files need to be sorted)
+QUALIMAP_JOB="qualimap_${RUN}"
+# Create/copy a file describing the sample names (sample_info.txt) to the parent folder and use it in qualimap 
+QUALIMAP_JOB_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; unset DISPLAY ; ls -1 *_${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk '{sample_name=gensub(/_.+?.dedup.rg.csorted.bam/, \"\", \$1); printf \"%s\t%s\n\", sample_name, \$1}'  > $QUALIMAP_JOB.samples ; qualimap multi-bamqc --java-mem-size=30G -r -c -gff $GENOME.gff -d $QUALIMAP_JOB.samples -outformat PDF:HTML -outfile $QUALIMAP_JOB.qualimap.multisampleBamQcReport -outdir $QUALIMAP_JOB ; cp $QUALIMAP_JOB/multisampleBamQcReport.html $QUALIMAP_JOB/$QUALIMAP_JOB.qualimap.multisampleBamQcReport.html" | qsub -V -l select=1:ncpus=${NCORES}:mem=32GB,walltime=7:00:00 -N ${QUALIMAP_JOB:0:11} -W depend=afterok:$ALIGN_ID[] | egrep -o "^[0-9]+") # 70762.pbsserv
+
+# collect mapping stats - update to work with Bowtie2
+echo '#!/bin/bash 
+#PBS -V
+#PBS -l' "select=1:ncpus=8:mem=8GB,walltime=00:30:00
+
+cd \$PBS_O_WORKDIR
+source ~/.bashrc
+conda activate $CONDA_NAME
+
+cat ${JOB_NAME:0:11}.e* > ${RUN}.log
+# collect mapping stats
+egrep 'Created read group|overall alignment rate|samblaster: Marked'  ${RUN}.log | gawk -v ORS="\t" -F " " 'BEGIN{printf \"sample_id\tmapping_rate\ttotal_reads\tduplicate_reads\n\"} NR%3==1{match(\$0, /.+ID=(.+?) PL.+/, a); print a[1]} NR%3==2{print \$1} NR%3==0{printf \"%s\t%s\n\", \$5, \$3}'   > ${RUN}_$REF.stats" > ${RUN}_stats.pbspro 
+# | paste ${RUN}.stats.tmp -
+STATS_JOB_ID=$(qsub ${RUN}_stats.pbspro -W depend=afterok:$ALIGN_ID[] | egrep -o "^[0-9]+")
+# merge bams
+IGNORE_SAMS='NONE'
+
+# merge BAMS to a single file
+BAMS=$( ls -1 ./*.csorted.bam | egrep -v $IGNORE_SAMS | gawk -v ORS=" " '{print $1}' )
+FINAL_MERGE_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; sambamba merge -t $NCORES -l 8 ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam $BAMS && sambamba index ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam && sambamba view -H ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam | grep "^@RG" > ${BATCH}.${ALIGNER}.${REF}.all.read_groups.txt" | qsub -V -l select=1:ncpus=${NCORES}:mem=16GB,walltime=5:00:00 -N Final_merge -W depend=afterok:$ALIGN_ID[]:$QUALIMAP_JOB_ID | egrep -o "^[0-9]+") 
 
 
+CALL_VARS="pileup_${RUN}"
+CALL_VARS_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; bcftools mpileup -d 1000 -Ou -f $GENOME.fasta ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam |   bcftools call -Ou -mv  | bcftools norm --threads \$NCPUS -f $GENOME.fasta -Oz > ${BATCH}.${ALIGNER}.${REF}.norm.vcf.gz && bcftools index ${BATCH}.${ALIGNER}.${REF}.norm.vcf.gz " | qsub -V -l select=1:ncpus=${NCORES}:mem=8GB,walltime=50:00:00 -N ${CALL_VARS:0:11} -W depend=afterok:$FINAL_MERGE | egrep -o "^[0-9]+")
+
+#FINAL_MERGE=$( echo "cd $( pwd ) ; picard MergeSamFiles USE_THREADING=true SO=coordinate $BAMS O=all.csorted.combined.bam" | qsub -V -l select=1:ncpus=${NCORES}:mem=96GB,walltime=5:00:00 -N Final_merge ) # 5248672.pbsserver
+# FINAL_MERGE_ID=$( echo $FINAL_MERGE | grep -P -o '[\d\.]+(?!\.\w)' | sed 's/\.$//')
+
+# save read groups to file (useful for vcf later on)
+
+# Extract mitocondrial sequences
+samtools faidx $GENOME.fasta
+grep "chromosome X" $GENOME.fasta | sed 's/>//' > $REF.chrX
+# gawk '{sub(">",  "", $1); print $1}' 
+# commands to extract the consensus sequence for each mitochondrial (Chr X)contig
+
+MT_CONSENS_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; parallel --dry-run 'samtools faidx -r Cooinda.chrX $GENOME.fasta | bcftools consensus -H 1pIu -s {} ${BATCH}.${ALIGNER}.${REF}.norm.vcf.gz > {}.chrX.fa' ::: \$(gawk -F ["\t":] '{print \$3}'  ${BATCH}.${ALIGNER}.${REF}.all.read_groups.txt) " | qsub -V -l select=1:ncpus=${NCORES}:mem=8GB,walltime=1:00:00 -N chrX_consensus -W depend=afterok:$CALL_VARS_ID | egrep -o "^[0-9]+")
+# extract all reads mapping to Chr X
+parallel --dry-run "samtools faidx -r Cooinda.chrX $GENOME.fasta | bcftools consensus -H 1pIu -s {} ${BATCH.${ALIGNER}.${REF}.norm.vcf.gz > ${BATCH}.${ALIGNER}.${REF}.{}.chrX.fa" ::: $(gawk -F ["\t":] '{print $3}'  ${BATCH}.${ALIGNER}.${REF}.all.read_groups.txt) > extract_chrX.cmds
+#parallel --dry-run "bcftools mpileup --threads \$NCPUS -f $GENOME.fasta -r {1} {2} | bcftools call  --threads \$NCPUS -c | vcfutils.pl vcf2fq >> {2.}.chrX.fq" ::: $( cat $REF.chrX )  ::: *.bam > extract_chrX.cmds
+# create a pbs file
+sed -E 's/mem=[0-9]+GB,walltime=[0-9]+:00:00/mem=4GB,walltime=0:30:00/'   ${RUN}.pbspro > extract_chrX.pbspro
+# run jobs as an array
+MT_CONSENS_ID=$( qsub -J1-$( cat extract_chrX.cmds | wc -l ) -N chrX_consensus  -vCMDS_FILE=extract_chrX.cmds -W depend=afterok:$CALL_VARS_ID extract_chrX.pbspro | egrep -o "^[0-9]+") 
+echo "Finished extracting consensus sequence job array" | qsub -l select=1:ncpus=1:mem=4MB,walltime=00:01:00 -N cons_finish -m e -M i.bar@griffith.edu.au -W depend=afterok:$MT_CONSENS_ID[]
+# transfer the sequences to CloudStor
+conda activate base
+rclone copy -L -P `pwd`/ChrX_consensus_seqs CloudStor:Shared/GRIFFITH-Ford-Crop-Genetics-Lab/Dingo/ChrX_consensus_seqs
+# run jobs in a single node
+# CHRX_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; cat extract_chrX.cmds | parallel"  | qsub -l select=1:ncpus=${NCORES}:mem=32GB,walltime=3:00:00 -N extract_chrX | egrep -o "^[0-9]+") 
+
+# find and remove empty files
+find . -size 0 -exec rm {} + 
+
+echo "########################### Job Execution History #############################"
+echo "Completed the following run: '$RUN' on $(date)"
+echo -e "Bowtie2 mapping details:\n\tArrayID = $ALIGN_ID"
+qstat -xftw $ALIGN_ID[] | egrep "resources_used|Exit_status|array_index = " # | gwak -v ORS="; " '1'
+echo -e "Post-trim QC details:\n\tJobID = $QC_JOB_ID"
+qstat -xftw $QC_JOB_ID | egrep "resources_used|Exit_status"
+echo -e "Qualimap details:\n\tJobID = $QUALIMAP_JOB_ID" # , $(grep 'ExitStatus' *.e$QUALIMAP_JOB_ID*)"
+qstat -xftw $QUALIMAP_JOB_ID | grep "resources_used|Exit_status"
+echo -e "MultiQC details:\n\tJobID = $MULTIQC_JOB_ID"
+qstat -xftw $MULTIQC_JOB_ID | grep "resources_used|Exit_status"
+echo -e "Mapping stats details:\n\tJobID = $STATS_JOB_ID"
+qstat -xftw $STATS_JOB_ID | grep "resources_used|Exit_status"
+echo -e "Final BAM merge details:\n\tJobID = $FINAL_MERGE_ID"
+qstat -xftw $FINAL_MERGE_ID | grep "resources_used|Exit_status"
+echo -e "Software used:\n\t bowtie2 v$(bowtie2 --version 2>&1 | gawk 'NR==1{print $NF}')\n\t $(samblaster --version 2>&1)\n\t $(bbduk.sh --version 2>&1 | grep "BBMap version")\n\t $(sambamba --version 2>&1 | head -n1)\n\t Picard $(picard ViewSam --version 2>&1)\n\t $(samtools --version 2>&1 | head -n1)\n\t $(fastqc --version 2>&1)\n\t $(qualimap --version 2>&1 | gawk 'NR==4')\n\t $(multiqc --version 2>&1)" 
+# Check that all jobs finished successfuly
+# find . -regextype posix-egrep -regex '\./.*\.e[0-9]{5}.*' | xargs grep "ExitStatus" #  *m.e$JOB_ID.*
+END_TIME=$(date +%s)
+TOTAL_SECS=$(( END_TIME - START_TIME ))
+# LAPSED_TIME=$( date -ud "@${TOTAL_SECS}" + '$((%s/3600/24)) days %T' )
+eval "echo $(date -ud "@$TOTAL_SECS" +'Total runtime: $((%s/3600/24)) days %T')"
+echo "###############################################################################"
+
+
+# Done!
+```
+
+
+
+#### Call Variants
+After alignment, variants were called from the aligned read files with either `mpileup` (from `r fontFmt("samtools/bcftools/sambamba")`), GATK or FreeBayes or aDNA-specific tools, such as [`r fontFmt("pileupCaller")`](https://github.com/stschiff/sequenceTools), `r fontFmt("ARIADNA")` [@kawashARIADNAMachineLearning2018], `r fontFmt("AntCaller")` [@zhouAntCallerAccurateVariant2017] or `r fontFmt("snpAD")` [@pruferSnpADAncientDNA2018].  
