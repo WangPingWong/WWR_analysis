@@ -2,7 +2,18 @@
 title: "Analysis of aDNA WW1 soldier"
 author: "Wang Ping"
 date: "11/2/2020"
-output: html_document
+output: 
+    html_document:
+      css: "style/style.css"
+      toc: true
+      toc_float: true
+      toc_depth: 3
+      highlight: pygments
+      number_sections: false
+      code_folding: hide
+#      keep_md: true
+bibliography: style/aDNA.bib
+csl: style/springer-basic-improved-author-date-with-italic-et-al-period.csl
 ---
 
 ```{r setup, include=FALSE}
@@ -78,9 +89,7 @@ conda update --all -y -n base
 # install bioinformatics software
 CONDA_NAME=aDNA #align for alignments and popgen for popgen analysis
 conda create -y -n $CONDA_NAME
-conda install -y -n $CONDA_NAME blast fastqc multiqc bioawk bbmap bowtie2 bwa bwa-mem2 cutadapt trimmomatic samtools samblaster biobambam sambamba=0.6.6 picard stack mapdamage2 nextflow qualimap 
-# install sequenceTools (requires stack to be installed)
-stack install sequenceTools --resolver nightly
+conda install -y -n $CONDA_NAME blast fastqc multiqc bioawk bbmap bowtie2 bwa bwa-mem2 cutadapt trimmomatic samtools samblaster biobambam sambamba=0.6.6 picard sequenceools mapdamage2 nextflow qualimap 
 # create an environment to process and analyse variants
 conda create -n snp_tools vcftools bcftools gatk4 freebayes snpsift stack plink admixtools admixture structure eigensoft # scikit-learn=0.18.2
 # conda create -n finestructure finestructure fineradstructure 
@@ -128,13 +137,13 @@ CONDA_NAME=aDNA
 conda activate $CONDA_NAME
 # Prepare the variables that will be used.
 DATE=`date +%d_%m_%Y`
-BATCH=aDNA
+BATCH=WWR
 ALIGNER=BT2
 RUN="${BATCH}_${ALIGNER}_process_${DATE}" # day of run was 26_11_2020
 # Create tmp folder
-TMP_DIR=$HOME/lscratch/tmp/$RUN # && mkdir -p $TMP_DIR # on GU HPC
+TMP_DIR=/scratch/$USER/tmp/$RUN  && mkdir -p $TMP_DIR # on GU HPC
 # Create working folder for the run
-mkdir -p ~/aDNA/Dingo/${RUN} # on GU HPC
+mkdir -p ~/aDNA/Human/WWR/${RUN} # on GU HPC
 cd !$
 REF_DIR="$HOME/aDNA/Human/reference_genomes" # on GU HPC
 REF="GRCh38"
@@ -152,20 +161,19 @@ RGPU=unit1
 RGCN=AGRF
 FQ_DIR="$HOME/aDNA/Human/WWR"
 # mkdir trimmed_reads
-ln -s $FQ_DIR/*.fastq.gz ./
+ln -s $FQ_DIR/*.f*q.gz ./
 
 # Prepare PBS script
 echo '#!/bin/bash 
 #PBS -V
 #PBS -l' "select=${NNODES}:ncpus=${NCORES}:mem=48GB,walltime=30:00:00
-#PBS -W umask=007
+#PBS -W umask=002
 
-mkdir -p $TMP_DIR
+# mkdir -p $TMP_DIR
 cd \$PBS_O_WORKDIR
 source ~/.bashrc
 conda activate $CONDA_NAME
-gawk -v ARRAY_IND=\$PBS_ARRAY_INDEX 'NR==ARRAY_IND' \${CMDS_FILE} | bash
-rm -rf $TMP_DIR" > ${RUN}.pbspro
+gawk -v ARRAY_IND=\$PBS_ARRAY_INDEX 'NR==ARRAY_IND' \${CMDS_FILE} | bash" > ${RUN}.pbspro
 
 # Build bowtie2 index
 ALIGN_IDX_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; bowtie2-build ${GENOME}.fasta ${GENOME}" | qsub -V -l select=1:ncpus=${NCORES}:mem=16GB,walltime=3:00:00 -N index-ref | egrep -o "^[0-9]+") # 70759.pbsserver
@@ -173,7 +181,7 @@ ALIGN_IDX_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME
 
 # bwa mem -M  -t 2 ${REF_GENOME} ${INPUT_DIR}/${sample}.fq.gz | samtools view -bS - > ${OUTPUTDIR}/${sample}.bam
 # Perform adapter trimming, mapping, deduplication, add RG, sort and index 
-find ./ -maxdepth 1 -name "*_1.f*q.gz" | sort | gawk -F"\t" -v fq_dir=$FQ_DIR -v ref=$REF -v ref_dir=$REF_DIR -v RGPL=$RGPL -v RGPU=$RGPU -v RGCN=$RGCN -v RGPM=$RGPM -v ncores=$NCORES -v mapper=${ALIGNER} -v tmpdir=$TMP_DIR '{n=split($1,a,"/"); infile2=gensub("_1\\.", "_2.", "1", $1); sample_id=gensub("_1.f.*q.gz", "", "1", a[n]); printf("bowtie2 --local -p %s --mp 4 -N 1 -x %s/%s -1 %s -2 %s --un-conc-gz %s_unmapped_pairs.fq.gz --rg-id %s --rg SM:%s --rg LB:%s --rg PL:%s --rg PM:%s --rg PU:%s --rg CN:%s | bamsormadup level=8 templevel=3 tmpfile=%s/%s.tmp M=%s.dedup.metrics indexfilename=%s.%s.%s.dedup.rg.csorted.bai > %s.%s.%s.dedup.rg.csorted.bam\n", ncores, ref_dir,ref, $1, infile2, sample_id, sample_id, sample_id, sample_id, RGPL,RGPM, RGPU, RGCN, tmpdir, sample_id, sample_id, sample_id,mapper,ref, sample_id,mapper,ref)}' > ${RUN}.bash
+find ./ -maxdepth 1 -name "UWW1*_1.f*q.gz" | sort | gawk -F"\t" -v ref=$REF -v ref_dir=$REF_DIR -v RGPL=$RGPL -v RGPU=$RGPU -v RGCN=$RGCN -v RGPM=$RGPM -v ncores=$NCORES -v mapper=${ALIGNER} -v tmpdir=$TMP_DIR '{n=split($1,a,"/"); infile2=gensub("_1\\.", "_2.", "1", $1); sample_id=gensub("_1.f.*q.gz", "", "1", a[n]); printf("bowtie2 --local -p %s --mp 4 -N 1 -x %s/%s -1 %s -2 %s --un-conc-gz %s_unmapped_pairs.fq.gz --rg-id %s --rg SM:%s --rg LB:%s --rg PL:%s --rg PM:%s --rg PU:%s --rg CN:%s | bamsormadup inputformat=sam level=8 templevel=3 tmpfile=%s/%s.tmp M=%s.dedup.metrics indexfilename=%s.%s.%s.dedup.rg.csorted.bai > %s.%s.%s.dedup.rg.csorted.bam\n", ncores, ref_dir,ref, $1, infile2, sample_id, sample_id, sample_id, sample_id, RGPL,RGPM, RGPU, RGCN, tmpdir, sample_id, sample_id, sample_id,mapper,ref, sample_id,mapper,ref)}' > ${RUN}.bash
 
 # Run on parallel nodes (faster and preferred)
 # fix picard -XX:ParallelGCThreads=n
@@ -187,7 +195,7 @@ ALIGN_ID=$( qsub -J1-$JOBS_NUM -N ${JOB_NAME:0:11} -W depend=afterok:$ALIGN_IDX_
 # Run qualimap on bam files (files need to be sorted)
 QUALIMAP_JOB="qualimap_${RUN}"
 # Create/copy a file describing the sample names (sample_info.txt) to the parent folder and use it in qualimap 
-QUALIMAP_JOB_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; unset DISPLAY ; ls -1 *_${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk '{sample_name=gensub(/_.+?.dedup.rg.csorted.bam/, \"\", \$1); printf \"%s\t%s\n\", sample_name, \$1}'  > $QUALIMAP_JOB.samples ; qualimap multi-bamqc --java-mem-size=30G -r -c -gff $GENOME.gff -d $QUALIMAP_JOB.samples -outformat PDF:HTML -outfile $QUALIMAP_JOB.qualimap.multisampleBamQcReport -outdir $QUALIMAP_JOB ; cp $QUALIMAP_JOB/multisampleBamQcReport.html $QUALIMAP_JOB/$QUALIMAP_JOB.qualimap.multisampleBamQcReport.html" | qsub -V -l select=1:ncpus=${NCORES}:mem=32GB,walltime=7:00:00 -N ${QUALIMAP_JOB:0:11} -W depend=afterok:$ALIGN_ID[] | egrep -o "^[0-9]+") # 70762.pbsserv
+QUALIMAP_JOB_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; unset DISPLAY ; ls -1 UWW1*_${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk '{sample_name=gensub(/_.+?.dedup.rg.csorted.bam/, \"\", \$1); printf \"%s\t%s\n\", sample_name, \$1}'  > $QUALIMAP_JOB.samples ; qualimap multi-bamqc --java-mem-size=30G -r -c -gff $GENOME.gff -d $QUALIMAP_JOB.samples -outformat PDF:HTML -outfile $QUALIMAP_JOB.qualimap.multisampleBamQcReport -outdir $QUALIMAP_JOB ; cp $QUALIMAP_JOB/multisampleBamQcReport.html $QUALIMAP_JOB/$QUALIMAP_JOB.qualimap.multisampleBamQcReport.html" | qsub -V -l select=1:ncpus=${NCORES}:mem=32GB,walltime=7:00:00 -N ${QUALIMAP_JOB:0:11} -W depend=afterok:$ALIGN_ID[] | egrep -o "^[0-9]+") # 70762.pbsserv
 
 # collect mapping stats - update to work with Bowtie2
 echo '#!/bin/bash 
