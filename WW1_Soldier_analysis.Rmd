@@ -89,7 +89,7 @@ conda update --all -y -n base
 # install bioinformatics software
 CONDA_NAME=aDNA #align for alignments and popgen for popgen analysis
 conda create -y -n $CONDA_NAME
-conda install -y -n $CONDA_NAME blast fastqc multiqc bioawk bbmap bowtie2 bwa bwa-mem2 cutadapt trimmomatic samtools samblaster biobambam sambamba=0.6.6 picard sequenceools mapdamage2 nextflow qualimap 
+conda install -y -n $CONDA_NAME blast fastqc multiqc bioawk bbmap bowtie2 bwa bwa-mem2 cutadapt trimmomatic samtools samblaster biobambam sambamba=0.6.6 picard sequencetools mapdamage2 nextflow qualimap mawk p7zip pandas numpy
 # create an environment to process and analyse variants
 conda create -n snp_tools vcftools bcftools gatk4 freebayes snpsift stack plink admixtools admixture structure eigensoft # scikit-learn=0.18.2
 # conda create -n finestructure finestructure fineradstructure 
@@ -123,14 +123,17 @@ _Make sure that the assembly (`.fna`) and annotation (`.gff`) files match the sa
 mkdir -p ~/aDNA/Human/reference_genomes  && cd ~/aDNA/Human/reference_genomes # on new GU HPC (shared aDNA folder)
 
 # download from ENSEMBL (GRCh38.p13)
-wget wget ftp://ftp.ensembl.org/pub/release-101/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+wget ftp://ftp.ensembl.org/pub/release-101/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
 wget ftp://ftp.ensembl.org/pub/release-101/gff3/homo_sapiens/Homo_sapiens.GRCh38.101.gff3.gz
 
 ```
 
 #### Mapping to the reference genome 
 The quality-trimmed reads were mapped to the Human reference genome, [GRCh38.p13](https://asia.ensembl.org/Homo_sapiens/Info/Index) using `r fontFmt("Bowtie 2")` v2.3.5.1, while adding Read Group information [@langmeadFastGappedreadAlignment2012]. `r fontFmt("Bowtie 2")` was run with custom parameteres for alignment of ancient DNA reads: local mode (`--local`), allowing a single mismatch in the mapping seed (`-N 1`) and a maximum mismatch penalty of 4 (`--mp 4`) [@cahillGenomicEvidenceWidespread2018]. The resulting alignments were processed to mark duplicate reads with `bamsormadup` from `r fontFmt("biobambam2")` [@tischlerBiobambamToolsRead2014].  
-To improve performance, temporary files were written to a local  `lscratch` folder on the computing node. Mapping statistics (rate, quality and coverage) were evaluated with `r fontFmt("Qualimap 2")` v.2.2.2-dev [@okonechnikov_qualimap_2016].
+To improve performance, temporary files were written to a local  `scratch` folder on the computing node. Mapping statistics (rate, quality and coverage) were evaluated with `r fontFmt("Qualimap 2")` v.2.2.2-dev [@okonechnikov_qualimap_2016].
+
+Y-chromosome haplogroup was predicted from the alignment files using [Yleaf](https://github.com/genid/Yleaf) v2.2, using default parameters [@Ralf_González_Zhong_Kayser_2018].
+
 
 ```{bash aDNA_bt2}
 CONDA_NAME=aDNA
@@ -166,7 +169,7 @@ ln -s $FQ_DIR/*.f*q.gz ./
 # Prepare PBS script
 echo '#!/bin/bash 
 #PBS -V
-#PBS -l' "select=${NNODES}:ncpus=${NCORES}:mem=48GB,walltime=30:00:00
+#PBS -l' "select=${NNODES}:ncpus=${NCORES}:mem=16GB,walltime=20:00:00
 #PBS -W umask=002
 
 # mkdir -p $TMP_DIR
@@ -195,7 +198,7 @@ ALIGN_ID=$( qsub -J1-$JOBS_NUM -N ${JOB_NAME:0:11} -W depend=afterok:$ALIGN_IDX_
 # Run qualimap on bam files (files need to be sorted)
 QUALIMAP_JOB="qualimap_${RUN}"
 # Create/copy a file describing the sample names (sample_info.txt) to the parent folder and use it in qualimap 
-QUALIMAP_JOB_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; unset DISPLAY ; ls -1 UWW1*_${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk '{sample_name=gensub(/_.+?.dedup.rg.csorted.bam/, \"\", \$1); printf \"%s\t%s\n\", sample_name, \$1}'  > $QUALIMAP_JOB.samples ; qualimap multi-bamqc --java-mem-size=30G -r -c -gff $GENOME.gff -d $QUALIMAP_JOB.samples -outformat PDF:HTML -outfile $QUALIMAP_JOB.qualimap.multisampleBamQcReport -outdir $QUALIMAP_JOB ; cp $QUALIMAP_JOB/multisampleBamQcReport.html $QUALIMAP_JOB/$QUALIMAP_JOB.qualimap.multisampleBamQcReport.html" | qsub -V -l select=1:ncpus=${NCORES}:mem=32GB,walltime=7:00:00 -N ${QUALIMAP_JOB:0:11} -W depend=afterok:$ALIGN_ID[] | egrep -o "^[0-9]+") # 70762.pbsserv
+QUALIMAP_JOB_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; unset DISPLAY ; ls -1 UWW1*${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk '{sample_name=gensub(/\\.${ALIGNER}.${REF}.dedup.rg.csorted.bam/, \"\", \$1); printf \"%s\\t%s\n\", sample_name, \$1}'   > $QUALIMAP_JOB.samples ; qualimap multi-bamqc --java-mem-size=30G -r -c -gff $GENOME.gff -d $QUALIMAP_JOB.samples -outformat PDF:HTML -outfile $QUALIMAP_JOB.qualimap.multisampleBamQcReport -outdir $QUALIMAP_JOB ; cp $QUALIMAP_JOB/multisampleBamQcReport.html $QUALIMAP_JOB/$QUALIMAP_JOB.qualimap.multisampleBamQcReport.html" | qsub -V -l select=1:ncpus=${NCORES}:mem=32GB,walltime=7:00:00 -N ${QUALIMAP_JOB:0:11} -W depend=afterok:$ALIGN_ID[] | egrep -o "^[0-9]+") # 70762.pbsserv
 
 # collect mapping stats - update to work with Bowtie2
 echo '#!/bin/bash 
@@ -208,12 +211,30 @@ conda activate $CONDA_NAME
 
 cat ${JOB_NAME:0:11}.e* > ${RUN}.log
 # collect mapping stats
-egrep 'Created read group|overall alignment rate|samblaster: Marked'  ${RUN}.log | gawk -v ORS="\t" -F " " 'BEGIN{printf \"sample_id\tmapping_rate\ttotal_reads\tduplicate_reads\n\"} NR%3==1{match(\$0, /.+ID=(.+?) PL.+/, a); print a[1]} NR%3==2{print \$1} NR%3==0{printf \"%s\t%s\n\", \$5, \$3}'   > ${RUN}_$REF.stats" > ${RUN}_stats.pbspro 
+egrep 'Created read group|overall alignment rate|samblaster: Marked'  ${RUN}.log | gawk -v ORS="\t" -F " " 'BEGIN{printf \"sample_id\tmapping_rate\ttotal_reads\tduplicated_reads\n\"} NR%3==1{match(\$0, /.+ID=(.+?) PL.+/, a); print a[1]} NR%3==2{print \$1} NR%3==0{printf \"%s\t%s\n\", \$5, \$3}'   > ${RUN}_$REF.stats" > ${RUN}_stats.pbspro 
 # | paste ${RUN}.stats.tmp -
 STATS_JOB_ID=$(qsub ${RUN}_stats.pbspro -W depend=afterok:$ALIGN_ID[] | egrep -o "^[0-9]+")
 # merge bams
 IGNORE_SAMS='NONE'
 
+# get Y chromosome haplogroup
+YLEAF_JOB="Yleaf_${RUN}"
+
+echo '#!/bin/bash 
+#PBS -V
+#PBS -l' "select=1:ncpus=8:mem=16GB,walltime=02:00:00
+#PBS -W umask=002
+
+cd \$PBS_O_WORKDIR
+source ~/.bashrc
+conda activate $CONDA_NAME
+gawk -v ARRAY_IND=\$PBS_ARRAY_INDEX 'NR==ARRAY_IND' \${CMDS_FILE} | bash" > ${YLEAF_JOB}.pbspro
+
+ls -1 UWW1*${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk -v ncores=8 '{sample_name=gensub(/\..+.dedup.rg.csorted.bam/, "", $1); printf "~/aDNA/Tools/Yleaf/Yleaf.py -t %s -bam %s -pos ~/aDNA/Tools/Yleaf/Position_files/WGS_hg38.txt -out %s.yleafout -r 1 -q 20 -b 90 && ~/aDNA/Tools/Yleaf/predict_haplogroup.py -input %s.yleafout/ -out %s.yleafout/%s_yleaf.hg\n", ncores, $1, sample_name, sample_name, sample_name, sample_name}' > ${YLEAF_JOB}.bash
+
+YLEAF_ID=$( qsub -J1-$(cat ${YLEAF_JOB}.bash | wc -l) -N ${YLEAF_JOB:0:11} -W depend=afterok:$ALIGN_ID[] -vCMDS_FILE=${YLEAF_JOB}.bash  ${YLEAF_JOB}.pbspro | egrep -o "^[0-9]+") 
+
+IGNORE_SAMS="NONE"
 # merge BAMS to a single file
 BAMS=$( ls -1 ./*.csorted.bam | egrep -v $IGNORE_SAMS | gawk -v ORS=" " '{print $1}' )
 FINAL_MERGE_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; sambamba merge -t $NCORES -l 8 ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam $BAMS && sambamba index ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam && sambamba view -H ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam | grep "^@RG" > ${BATCH}.${ALIGNER}.${REF}.all.read_groups.txt" | qsub -V -l select=1:ncpus=${NCORES}:mem=16GB,walltime=5:00:00 -N Final_merge -W depend=afterok:$ALIGN_ID[]:$QUALIMAP_JOB_ID | egrep -o "^[0-9]+") 
