@@ -261,11 +261,47 @@ GATK_ID=$( qsub -J1-$(cat ${GATK_HC}.bash | wc -l) -N ${GATK_HC:0:11} -vCMDS_FIL
 GVCF_FILES=$(ls -1 UWW1*${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk '{sample_name=gensub(/\..+.dedup.rg.csorted.bam/, "", $1); printf "-V %s.HC.gvcf ",sample_name}' )
 # CHRS=$(gawk -vORS="," '{print $1}' $GENOME.fasta.fai )
 cut -f1 $GENOME.fasta.fai > ${REF}_intervals.list 
-# Create a GenomicsDB workspace 
-DBIMPORT_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; export TILEDB_DISABLE_FILE_LOCKING=1; gatk GenomicsDBImport --java-options \"-Xmx8g -Xms8g\" $GVCF_FILES --genomicsdb-workspace-path ${BATCH}_GenomicsDB --tmp-dir $TMP_DIR -L ${REF}_intervals.list " | qsub -V -l select=1:ncpus=4:mem=16GB,walltime=10:00:00 -N gatk_dbimport -W depend=afterok:$GATK_ID[] | egrep -o "^[0-9]+")
+
+# Create a GenomicsDB workspace (need to do this per chromosome)
+# for each chromosome
+# check what is the size of all the partial contigs
+gawk 'BEGIN{tot=0};$1~/^GL/{tot+=$2};END{print tot}'  $GENOME.fasta.fai 
+gawk 'BEGIN{tot=0};$1~/^KI/{tot+=$2};END{print tot}'  $GENOME.fasta.fai 
+# send them to a file
+gawk '$1~/^GL|^KI/{print $1}' $GENOME.fasta.fai > ${REF}_contigs.list
+
+# create a general array pbs file
+echo '#!/bin/bash 
+#PBS -V
+#PBS -W umask=002
+
+cd $PBS_O_WORKDIR
+source ~/.bashrc'"
+conda activate $CONDA_NAME
+gawk -v ARRAY_IND=\$PBS_ARRAY_INDEX 'NR==ARRAY_IND' \${CMDS_FILE} | bash" > array.pbspro
+
+# create a command for each chromosome
+egrep -v "^GL|^KI" $GENOME.fasta.fai | cut -f1 | parallel --dry-run "export TILEDB_DISABLE_FILE_LOCKING=1; gatk GenomicsDBImport --java-options \"-Xmx4g -Xms4g\" $GVCF_FILES --genomicsdb-workspace-path GenomicsDB_{} --tmp-dir $TMP_DIR -L {} " > DBimport_${BATCH}.bash
+# add the contigs to the commands file
+echo "export TILEDB_DISABLE_FILE_LOCKING=1; gatk GenomicsDBImport --java-options \"-Xmx4g -Xms4g\" $GVCF_FILES --genomicsdb-workspace-path GenomicsDB_contigs --tmp-dir $TMP_DIR -L ${REF}_contigs.list " >> DBimport_${BATCH}.bash
+
+# create workspace for each chromosome (in parallel via the cluster)
+DBIMPORT_ID=$( qsub -J1-$(cat DBimport_${BATCH}.bash | wc -l) -l select=1:ncpus=1:mem=6GB,walltime=2:00:00 -N gatk_dbimport -vCMDS_FILE=DBimport_${BATCH}.bash  array.pbspro | egrep -o "^[0-9]+")
+
+# Call variants from each chromosome/workspace
+egrep -v "^GL|^KI" $GENOME.fasta.fai | cut -f1 | parallel --dry-run "gatk GenotypeGVCFs --java-options \"-Xmx12g -Xms12g\" -R $GENOME.fasta -V gendb://GenomicsDB_{} --tmp-dir $TMP_DIR -new-qual -O UWW1.all.${ALIGNER}.${REF}.{}.vcf" > GenotypeGVCFs_${BATCH}.bash
+
+echo "gatk GenotypeGVCFs --java-options \"-Xmx12g -Xms12g\" -R $GENOME.fasta -V gendb://GenomicsDB_contigs --tmp-dir $TMP_DIR -new-qual -O UWW1.all.${ALIGNER}.${REF}.contigs.vcf" >> GenotypeGVCFs_${BATCH}.bash
+
+GENOVCF_ID=$( qsub -J1-$(cat GenotypeGVCFs_${BATCH}.bash | wc -l) -l select=1:ncpus=1:mem=16GB,walltime=20:00:00 -N GenotypeGVCFs -W depend=afterok:$DBIMPORT_ID[] -vCMDS_FILE=GenotypeGVCFs_${BATCH}.bash  array.pbspro | egrep -o "^[0-9]+")
+
+# can verify that all jobs finished successfully with
+grep "Import completed" *.e$DBIMPORT_ID*
+
+#DBIMPORT_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; export TILEDB_DISABLE_FILE_LOCKING=1; gatk GenomicsDBImport --java-options \"-Xmx8g -Xms8g\" $GVCF_FILES --genomicsdb-workspace-path ${BATCH}_GenomicsDB --tmp-dir $TMP_DIR -L ${REF}_intervals.list " | qsub -V -l select=1:ncpus=4:mem=16GB,walltime=10:00:00 -N gatk_dbimport -W depend=afterok:$GATK_ID[] | egrep -o "^[0-9]+")
 
 # call variants
-GENOVCF_ID=$(echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \"-Xmx4g\" -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB  -new-qual -O UWW1.all.${ALIGNER}.${REF}.vcf"  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeGVCFs -W depend=afterok:$DBIMPORT_ID | egrep -o "^[0-9]+")
+#GENOVCF_ID=$(echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \"-Xmx4g\" -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB  -new-qual -O UWW1.all.${ALIGNER}.${REF}.vcf"  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeGVCFs -W depend=afterok:$DBIMPORT_ID | egrep -o "^[0-9]+")
 
 # call variants from just MT 
 GENOVCFMT_ID=$(echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \"-Xmx4g\" -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB -L MT -new-qual -O ${BATCH}.all.${ALIGNER}.${REF}.MT.vcf"  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeMT -W depend=afterok:$DBIMPORT_ID | egrep -o "^[0-9]+")
