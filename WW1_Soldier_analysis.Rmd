@@ -67,7 +67,7 @@ Command to login to the server (make sure that the VPN is connected)
 ```{bash server_access}
 ssh -Y s5119482@10.250.250.3
 # or
-ssh –Y s5119482@gc-prd-hpclogin1.rcs.griffith.edu.au
+ssh -Y s5119482@gc-prd-hpclogin1.rcs.griffith.edu.au
 ```  
 
 ### Setup Bioinformatics Environment
@@ -150,11 +150,15 @@ mkdir -p ~/aDNA/Human/WWR/${RUN} # on GU HPC
 cd !$
 REF_DIR="$HOME/aDNA/Human/reference_genomes" # on GU HPC
 REF="GRCh38"
-[ ! -s "$REF_DIR/$REF.fasta" ] && pigz -cd $(find $REF_DIR -name "*$REF*.f*a.gz") > $REF_DIR/$REF.fasta
-[ ! -s "$REF_DIR/$REF.gff" ] && pigz -cd $(find $REF_DIR -name "*$REF*.gff.gz") > $REF_DIR/$REF.gff
+GENOME="$REF_DIR/$REF"
+[ ! -s "$REF_DIR/$REF.fasta" ] && pigz -cd $(find $REF_DIR -name "*$REF*.f*a.gz") > $GENOME.fasta
+[ ! -s "$REF_DIR/$REF.gff" ] && pigz -cd $(find $REF_DIR -name "*$REF*.gff.gz") > $GENOME.gff
+# create index and dictionary for the reference genome
+samtools faidx $GENOME.fasta
+picard CreateSequenceDictionary R=$GENOME.fasta
 #cat $REF_DIR/Dingo_MT_MH035676.1.fasta >> $REF_DIR/$REF.fasta
 
-GENOME="$REF_DIR/$REF"
+
 READ_LENGTH=150
 NCORES=16 # use maximum 16!
 NNODES=1
@@ -184,7 +188,7 @@ ALIGN_IDX_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME
 
 # bwa mem -M  -t 2 ${REF_GENOME} ${INPUT_DIR}/${sample}.fq.gz | samtools view -bS - > ${OUTPUTDIR}/${sample}.bam
 # Perform adapter trimming, mapping, deduplication, add RG, sort and index 
-find ./ -maxdepth 1 -name "UWW1*_1.f*q.gz" | sort | gawk -F"\t" -v ref=$REF -v ref_dir=$REF_DIR -v RGPL=$RGPL -v RGPU=$RGPU -v RGCN=$RGCN -v RGPM=$RGPM -v ncores=$NCORES -v mapper=${ALIGNER} -v tmpdir=$TMP_DIR '{n=split($1,a,"/"); infile2=gensub("_1\\.", "_2.", "1", $1); sample_id=gensub("_1.f.*q.gz", "", "1", a[n]); printf("bowtie2 --local -p %s --mp 4 -N 1 -x %s/%s -1 %s -2 %s --un-conc-gz %s_unmapped_pairs.fq.gz --rg-id %s --rg SM:%s --rg LB:%s --rg PL:%s --rg PM:%s --rg PU:%s --rg CN:%s | bamsormadup inputformat=sam level=8 templevel=3 tmpfile=%s/%s.tmp M=%s.dedup.metrics indexfilename=%s.%s.%s.dedup.rg.csorted.bai > %s.%s.%s.dedup.rg.csorted.bam\n", ncores, ref_dir,ref, $1, infile2, sample_id, sample_id, sample_id, sample_id, RGPL,RGPM, RGPU, RGCN, tmpdir, sample_id, sample_id, sample_id,mapper,ref, sample_id,mapper,ref)}' > ${RUN}.bash
+find ./ -maxdepth 1 -name "UWW1*_1.f*q.gz" | sort | gawk -F"\t" -v ref=$REF -v ref_dir=$REF_DIR -v RGPL=$RGPL -v RGPU=$RGPU -v RGCN=$RGCN -v RGPM=$RGPM -v ncores=$NCORES -v mapper=${ALIGNER} -v tmpdir=$TMP_DIR '{n=split($1,a,"/"); infile2=gensub("_1\\.", "_2.", "1", $1); sample_id=gensub("_1.f.*q.gz", "", "1", a[n]); printf("bowtie2 --local -p %s --mp 4 -N 1 -x %s/%s -1 %s -2 %s --un-conc-gz %s_unmapped_pairs.fq.gz --rg-id %s --rg SM:%s --rg LB:%s --rg PL:%s --rg PM:%s --rg PU:%s --rg CN:%s | bamsormadup inputformat=sam level=8 templevel=3 tmpfile=%s/%s.tmp M=%s.dedup.metrics indexfilename=%s.%s.%s.dedup.rg.csorted.bai > %s.%s.%s.dedup.rg.csorted.bam && rm -r %s/%s.tmp*\n", ncores, ref_dir,ref, $1, infile2, sample_id, sample_id, sample_id, sample_id, RGPL,RGPM, RGPU, RGCN, tmpdir, sample_id, sample_id, sample_id,mapper,ref, sample_id,mapper,ref, tmpdir, sample_id)}' > ${RUN}.bash
 
 # Run on parallel nodes (faster and preferred)
 # fix picard -XX:ParallelGCThreads=n
@@ -235,13 +239,40 @@ ls -1 UWW1*${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk -v ncores=8 '{sample_na
 YLEAF_ID=$( qsub -J1-$(cat ${YLEAF_JOB}.bash | wc -l) -N ${YLEAF_JOB:0:11} -W depend=afterok:$ALIGN_ID[] -vCMDS_FILE=${YLEAF_JOB}.bash  ${YLEAF_JOB}.pbspro | egrep -o "^[0-9]+") 
 
 IGNORE_SAMS="NONE"
-# merge BAMS to a single file
-BAMS=$( ls -1 ./*.csorted.bam | egrep -v $IGNORE_SAMS | gawk -v ORS=" " '{print $1}' )
-FINAL_MERGE_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; sambamba merge -t $NCORES -l 8 ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam $BAMS && sambamba index ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam && sambamba view -H ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam | grep "^@RG" > ${BATCH}.${ALIGNER}.${REF}.all.read_groups.txt" | qsub -V -l select=1:ncpus=${NCORES}:mem=16GB,walltime=5:00:00 -N Final_merge -W depend=afterok:$ALIGN_ID[]:$QUALIMAP_JOB_ID | egrep -o "^[0-9]+") 
+# merge BAMS to a single file (not needed for GATK)
+# BAMS=$( ls -1 ./*.csorted.bam | egrep -v $IGNORE_SAMS | gawk -v ORS=" " '{print $1}' )
+# FINAL_MERGE_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; sambamba merge -t $NCORES -l 8 ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam $BAMS && sambamba index ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam && sambamba view -H ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam | grep "^@RG" > ${BATCH}.${ALIGNER}.${REF}.all.read_groups.txt" | qsub -V -l select=1:ncpus=${NCORES}:mem=16GB,walltime=5:00:00 -N Final_merge -W depend=afterok:$ALIGN_ID[]:$QUALIMAP_JOB_ID | egrep -o "^[0-9]+") 
 
 
-CALL_VARS="pileup_${RUN}"
-CALL_VARS_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; bcftools mpileup -d 1000 -Ou -f $GENOME.fasta ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam |   bcftools call -Ou -mv  | bcftools norm --threads \$NCPUS -f $GENOME.fasta -Oz > ${BATCH}.${ALIGNER}.${REF}.norm.vcf.gz && bcftools index ${BATCH}.${ALIGNER}.${REF}.norm.vcf.gz " | qsub -V -l select=1:ncpus=${NCORES}:mem=8GB,walltime=50:00:00 -N ${CALL_VARS:0:11} -W depend=afterok:$FINAL_MERGE | egrep -o "^[0-9]+")
+# CALL_VARS="pileup_${RUN}"
+# CALL_VARS_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; bcftools mpileup -d 1000 -Ou -f $GENOME.fasta ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam |   bcftools call -Ou -mv  | bcftools norm --threads \$NCPUS -f $GENOME.fasta -Oz > ${BATCH}.${ALIGNER}.${REF}.norm.vcf.gz && bcftools index ${BATCH}.${ALIGNER}.${REF}.norm.vcf.gz " | qsub -V -l select=1:ncpus=${NCORES}:mem=8GB,walltime=50:00:00 -N ${CALL_VARS:0:11} -W depend=afterok:$FINAL_MERGE | egrep -o "^[0-9]+")
+
+# GATK Hc
+GATK_HC="gatk_hc_${RUN}"
+# -L MT
+ls -1 UWW1*${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk -v genome=$GENOME -v ref=$REF -v ncores=$NCORES -v mapper=${ALIGNER} -v tmpdir=$TMP_DIR  '{sample_name=gensub(/\..+.dedup.rg.csorted.bam/, "", $1); printf "gatk HaplotypeCaller -R %s.fasta -I %s -O %s.HC.gvcf -ERC GVCF\n", genome, $1, sample_name}' > $GATK_HC.bash
+
+# create a pbs file
+sed -E 's/mem=[0-9]+GB,walltime=[0-9]+:00:00/mem=8GB,walltime=15:00:00/'   ${RUN}.pbspro > $GATK_HC.pbspro
+
+GATK_ID=$( qsub -J1-$(cat ${GATK_HC}.bash | wc -l) -N ${GATK_HC:0:11} -vCMDS_FILE=${GATK_HC}.bash  ${GATK_HC}.pbspro | egrep -o "^[0-9]+") 
+
+# combine gvcf files
+GVCF_FILES=$(ls -1 UWW1*${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk '{sample_name=gensub(/\..+.dedup.rg.csorted.bam/, "", $1); printf "-V %s.HC.gvcf ",sample_name}' )
+# CHRS=$(gawk -vORS="," '{print $1}' $GENOME.fasta.fai )
+cut -f1 $GENOME.fasta.fai > ${REF}_intervals.list 
+# Create a GenomicsDB workspace 
+DBIMPORT_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; export TILEDB_DISABLE_FILE_LOCKING=1; gatk GenomicsDBImport --java-options \"-Xmx8g -Xms8g\" $GVCF_FILES --genomicsdb-workspace-path ${BATCH}_GenomicsDB --tmp-dir $TMP_DIR -L ${REF}_intervals.list " | qsub -V -l select=1:ncpus=4:mem=16GB,walltime=10:00:00 -N gatk_dbimport -W depend=afterok:$GATK_ID[] | egrep -o "^[0-9]+")
+
+# call variants
+GENOVCF_ID=$(echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \"-Xmx4g\" -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB  -new-qual -O UWW1.all.${ALIGNER}.${REF}.vcf"  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeGVCFs -W depend=afterok:$DBIMPORT_ID | egrep -o "^[0-9]+")
+
+# call variants from just MT 
+GENOVCFMT_ID=$(echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \"-Xmx4g\" -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB -L MT -new-qual -O ${BATCH}.all.${ALIGNER}.${REF}.MT.vcf"  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeMT -W depend=afterok:$DBIMPORT_ID | egrep -o "^[0-9]+")
+
+    
+# VariantFiltration
+gatk VariantFiltration -R $GENOME.fasta -V myfile_HC.vcf --filter-expression "DP<5" --filter-name "DP" -O myfile_HC_VF.vcf
 
 #FINAL_MERGE=$( echo "cd $( pwd ) ; picard MergeSamFiles USE_THREADING=true SO=coordinate $BAMS O=all.csorted.combined.bam" | qsub -V -l select=1:ncpus=${NCORES}:mem=96GB,walltime=5:00:00 -N Final_merge ) # 5248672.pbsserver
 # FINAL_MERGE_ID=$( echo $FINAL_MERGE | grep -P -o '[\d\.]+(?!\.\w)' | sed 's/\.$//')
