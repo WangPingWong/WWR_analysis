@@ -91,7 +91,7 @@ CONDA_NAME=aDNA #align for alignments and popgen for popgen analysis
 conda create -y -n $CONDA_NAME
 conda install -y -n $CONDA_NAME blast fastqc multiqc bioawk bbmap bowtie2 bwa bwa-mem2 cutadapt trimmomatic samtools samblaster biobambam sambamba=0.6.6 picard sequencetools mapdamage2 nextflow qualimap mawk p7zip pandas numpy
 # create an environment to process and analyse variants
-conda create -n snp_tools vcftools bcftools gatk4 freebayes snpsift stack plink admixtools admixture structure eigensoft # scikit-learn=0.18.2
+conda create -n snp_tools vcftools bcftools gatk4=4.1.9.0 freebayes snpsift stack plink admixtools admixture structure eigensoft # scikit-learn=0.18.2
 # conda create -n finestructure finestructure fineradstructure 
 # conda create -n faststructure faststructure
 # activate environment and cleanup
@@ -248,14 +248,14 @@ IGNORE_SAMS="NONE"
 # CALL_VARS_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; bcftools mpileup -d 1000 -Ou -f $GENOME.fasta ${BATCH}.${ALIGNER}.${REF}.all.csorted.combined.bam |   bcftools call -Ou -mv  | bcftools norm --threads \$NCPUS -f $GENOME.fasta -Oz > ${BATCH}.${ALIGNER}.${REF}.norm.vcf.gz && bcftools index ${BATCH}.${ALIGNER}.${REF}.norm.vcf.gz " | qsub -V -l select=1:ncpus=${NCORES}:mem=8GB,walltime=50:00:00 -N ${CALL_VARS:0:11} -W depend=afterok:$FINAL_MERGE | egrep -o "^[0-9]+")
 
 # GATK Hc
-GATK_HC="gatk_hc_${RUN}"
+GATK_HC="gatk_hc_$(date +%d_%m)"
 # -L MT
-ls -1 UWW1*${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk -v genome=$GENOME -v ref=$REF -v ncores=$NCORES -v mapper=${ALIGNER} -v tmpdir=$TMP_DIR  '{sample_name=gensub(/\..+.dedup.rg.csorted.bam/, "", $1); printf "gatk HaplotypeCaller -R %s.fasta -I %s -O %s.HC.gvcf -ERC GVCF\n", genome, $1, sample_name}' > $GATK_HC.bash
+ls -1 UWW1*${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk -v genome=$GENOME -v ref=$REF -v ncores=$NCORES -v mapper=${ALIGNER} -v tmpdir=$TMP_DIR  '{sample_name=gensub(/\..+.dedup.rg.csorted.bam/, "", $1); printf "gatk --java-options "-Xmx12g" HaplotypeCaller -R %s.fasta -I %s -O %s.HC.g.vcf.gz -ERC GVCF\n", genome, $1, sample_name}' > $GATK_HC.bash
 
 # create a pbs file
-sed -E 's/mem=[0-9]+GB,walltime=[0-9]+:00:00/mem=8GB,walltime=15:00:00/'   ${RUN}.pbspro > $GATK_HC.pbspro
+#sed -E 's/mem=[0-9]+GB,walltime=[0-9]+:00:00/mem=8GB,walltime=15:00:00/'   ${RUN}.pbspro > $GATK_HC.pbspro
 
-GATK_ID=$( qsub -J1-$(cat ${GATK_HC}.bash | wc -l) -N ${GATK_HC:0:11} -vCMDS_FILE=${GATK_HC}.bash  ${GATK_HC}.pbspro | egrep -o "^[0-9]+") 
+GATK_HC_ID=$( qsub -J1-$(cat ${GATK_HC}.bash | wc -l) -N ${GATK_HC:0:11} -l select=1:ncpus=1:mem=16GB,walltime=15:00:00 -vCMDS_FILE=${GATK_HC}.bash  ${RUN}.pbspro | egrep -o "^[0-9]+") 
 
 # combine gvcf files
 GVCF_FILES=$(ls -1 UWW1*${ALIGNER}.${REF}.dedup.rg.csorted.bam | gawk '{sample_name=gensub(/\..+.dedup.rg.csorted.bam/, "", $1); printf "-V %s.HC.gvcf ",sample_name}' )
@@ -288,15 +288,22 @@ echo "export TILEDB_DISABLE_FILE_LOCKING=1; gatk GenomicsDBImport --java-options
 # create workspace for each chromosome (in parallel via the cluster)
 DBIMPORT_ID=$( qsub -J1-$(cat DBimport_${BATCH}.bash | wc -l) -l select=1:ncpus=1:mem=6GB,walltime=2:00:00 -N gatk_dbimport -vCMDS_FILE=DBimport_${BATCH}.bash  array.pbspro | egrep -o "^[0-9]+")
 
-# Call variants from each chromosome/workspace
-egrep -v "^GL|^KI" $GENOME.fasta.fai | cut -f1 | parallel --dry-run "gatk GenotypeGVCFs --java-options \"-Xmx12g -Xms12g\" -R $GENOME.fasta -V gendb://GenomicsDB_{} --tmp-dir $TMP_DIR -new-qual -O UWW1.all.${ALIGNER}.${REF}.{}.vcf" > GenotypeGVCFs_${BATCH}.bash
-
-echo "gatk GenotypeGVCFs --java-options \"-Xmx12g -Xms12g\" -R $GENOME.fasta -V gendb://GenomicsDB_contigs --tmp-dir $TMP_DIR -new-qual -O UWW1.all.${ALIGNER}.${REF}.contigs.vcf" >> GenotypeGVCFs_${BATCH}.bash
-
-GENOVCF_ID=$( qsub -J1-$(cat GenotypeGVCFs_${BATCH}.bash | wc -l) -l select=1:ncpus=1:mem=16GB,walltime=20:00:00 -N GenotypeGVCFs -W depend=afterok:$DBIMPORT_ID[] -vCMDS_FILE=GenotypeGVCFs_${BATCH}.bash  array.pbspro | egrep -o "^[0-9]+")
-
 # can verify that all jobs finished successfully with
 grep "Import completed" *.e$DBIMPORT_ID*
+
+# Call variants from each chromosome/workspace
+egrep -v "^GL|^KI" $GENOME.fasta.fai | cut -f1 | parallel --dry-run "gatk GenotypeGVCFs --java-options \"-Xmx12g -Xms12g\" -R $GENOME.fasta -V gendb://GenomicsDB_{} --tmp-dir $TMP_DIR -O ${BATCH}.${ALIGNER}.${REF}.{}.vcf.gz" > GenotypeGVCFs_${BATCH}.bash
+
+echo "gatk GenotypeGVCFs --java-options \"-Xmx12g -Xms12g\" -R $GENOME.fasta -V gendb://GenomicsDB_contigs --tmp-dir $TMP_DIR -O ${BATCH}.${ALIGNER}.${REF}.contigs.vcf.gz" >> GenotypeGVCFs_${BATCH}.bash
+
+GENOVCF_ID=$( qsub -J1-$(cat GenotypeGVCFs_${BATCH}.bash | wc -l) -l select=1:ncpus=2:mem=16GB,walltime=20:00:00 -N GenotypeGVCFs  -vCMDS_FILE=GenotypeGVCFs_${BATCH}.bash ${RUN}.pbspro | egrep -o "^[0-9]+")
+
+# can verify that all jobs finished successfully with
+grep "Traversal complete" *.e$GENOVCF_ID*
+
+# combine all into one file!! (need to have vcftools installed in environment)
+vcf-concat ${BATCH}.${ALIGNER}.${REF}*vcf.gz > ${BATCH}.${ALIGNER}.${REF}.vcf
+
 
 #DBIMPORT_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; export TILEDB_DISABLE_FILE_LOCKING=1; gatk GenomicsDBImport --java-options \"-Xmx8g -Xms8g\" $GVCF_FILES --genomicsdb-workspace-path ${BATCH}_GenomicsDB --tmp-dir $TMP_DIR -L ${REF}_intervals.list " | qsub -V -l select=1:ncpus=4:mem=16GB,walltime=10:00:00 -N gatk_dbimport -W depend=afterok:$GATK_ID[] | egrep -o "^[0-9]+")
 
