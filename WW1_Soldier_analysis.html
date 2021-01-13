@@ -1835,11 +1835,12 @@ Detailed methods, including code for running each of the analyses steps are prov
 2. Dingo (Cooinda) - <a href="https://www.ncbi.nlm.nih.gov/assembly/GCF_012295265.1/">GCF_012295265.1</a><br />
 3. Dingo mitochondrion genome <a href="https://www.ncbi.nlm.nih.gov/nucleotide/MH035676.1">MH035676.1</a><br />
 4. Dog CanFam3.1 <a href="https://www.ncbi.nlm.nih.gov/assembly/GCF_000002285.3/">GCF_000002285.3</a> <em>Make sure that the assembly (<code>.fna</code>) and annotation (<code>.gff</code>) files match the same assembly</em></p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1"></a><span class="fu">mkdir</span> -p ~/aDNA/Human/reference_genomes  <span class="kw">&amp;&amp;</span> <span class="bu">cd</span> ~/aDNA/Human/reference_genomes <span class="co"># on new GU HPC (shared aDNA folder)</span></span>
-<span id="cb3-2"><a href="#cb3-2"></a></span>
-<span id="cb3-3"><a href="#cb3-3"></a><span class="co"># download from ENSEMBL (GRCh38.p13)</span></span>
-<span id="cb3-4"><a href="#cb3-4"></a><span class="fu">wget</span> ftp://ftp.ensembl.org/pub/release-101/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz</span>
-<span id="cb3-5"><a href="#cb3-5"></a><span class="fu">wget</span> ftp://ftp.ensembl.org/pub/release-101/gff3/homo_sapiens/Homo_sapiens.GRCh38.101.gff3.gz</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1"></a><span class="va">REF_DIR=$HOME</span>/aDNA/Human/reference_genomes</span>
+<span id="cb3-2"><a href="#cb3-2"></a><span class="fu">mkdir</span> -p <span class="va">$REF_DIR</span>  <span class="kw">&amp;&amp;</span> <span class="bu">cd</span> <span class="va">$REF_DIR</span> <span class="co"># on new GU HPC (shared aDNA folder)</span></span>
+<span id="cb3-3"><a href="#cb3-3"></a></span>
+<span id="cb3-4"><a href="#cb3-4"></a><span class="co"># download from ENSEMBL (GRCh38.p13)</span></span>
+<span id="cb3-5"><a href="#cb3-5"></a><span class="fu">wget</span> ftp://ftp.ensembl.org/pub/release-101/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz</span>
+<span id="cb3-6"><a href="#cb3-6"></a><span class="fu">wget</span> ftp://ftp.ensembl.org/pub/release-101/gff3/homo_sapiens/Homo_sapiens.GRCh38.101.gff3.gz</span></code></pre></div>
 </div>
 <div id="mapping-to-the-reference-genome" class="section level4">
 <h4>Mapping to the reference genome</h4>
@@ -2012,82 +2013,188 @@ To improve performance, temporary files were written to a local <code>scratch</c
 <span id="cb4-164"><a href="#cb4-164"></a><span class="fu">grep</span> <span class="st">&quot;Traversal complete&quot;</span> *.e<span class="va">$GENOVCF_ID</span>*</span>
 <span id="cb4-165"><a href="#cb4-165"></a></span>
 <span id="cb4-166"><a href="#cb4-166"></a><span class="co"># combine all into one file!! (need to have vcftools installed in environment)</span></span>
-<span id="cb4-167"><a href="#cb4-167"></a><span class="ex">vcf-concat</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>*vcf.gz <span class="op">&gt;</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.vcf</span>
-<span id="cb4-168"><a href="#cb4-168"></a></span>
-<span id="cb4-169"><a href="#cb4-169"></a></span>
-<span id="cb4-170"><a href="#cb4-170"></a><span class="co">#DBIMPORT_ID=$( echo &quot;cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; export TILEDB_DISABLE_FILE_LOCKING=1; gatk GenomicsDBImport --java-options \&quot;-Xmx8g -Xms8g\&quot; $GVCF_FILES --genomicsdb-workspace-path ${BATCH}_GenomicsDB --tmp-dir $TMP_DIR -L ${REF}_intervals.list &quot; | qsub -V -l select=1:ncpus=4:mem=16GB,walltime=10:00:00 -N gatk_dbimport -W depend=afterok:$GATK_ID[] | egrep -o &quot;^[0-9]+&quot;)</span></span>
-<span id="cb4-171"><a href="#cb4-171"></a></span>
-<span id="cb4-172"><a href="#cb4-172"></a><span class="co"># call variants</span></span>
-<span id="cb4-173"><a href="#cb4-173"></a><span class="co">#GENOVCF_ID=$(echo &quot;cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \&quot;-Xmx4g\&quot; -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB  -new-qual -O UWW1.all.${ALIGNER}.${REF}.vcf&quot;  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeGVCFs -W depend=afterok:$DBIMPORT_ID | egrep -o &quot;^[0-9]+&quot;)</span></span>
-<span id="cb4-174"><a href="#cb4-174"></a></span>
-<span id="cb4-175"><a href="#cb4-175"></a><span class="co"># call variants from just MT </span></span>
-<span id="cb4-176"><a href="#cb4-176"></a><span class="va">GENOVCFMT_ID=$(</span><span class="bu">echo</span> <span class="st">&quot;cd </span><span class="va">$(</span> <span class="bu">pwd</span> <span class="va">)</span><span class="st"> ; source ~/.bashrc; conda activate </span><span class="va">$CONDA_NAME</span><span class="st">; gatk GenotypeGVCFs --java-options </span><span class="dt">\&quot;</span><span class="st">-Xmx4g</span><span class="dt">\&quot;</span><span class="st"> -R </span><span class="va">$GENOME</span><span class="st">.fasta -V gendb://</span><span class="va">${BATCH}</span><span class="st">_GenomicsDB -L MT -new-qual -O </span><span class="va">${BATCH}</span><span class="st">.all.</span><span class="va">${ALIGNER}</span><span class="st">.</span><span class="va">${REF}</span><span class="st">.MT.vcf&quot;</span>  <span class="kw">|</span> <span class="ex">qsub</span> -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeMT -W depend=afterok:<span class="va">$DBIMPORT_ID</span> <span class="kw">|</span> <span class="fu">egrep</span> -o <span class="st">&quot;^[0-9]+&quot;</span><span class="va">)</span></span>
-<span id="cb4-177"><a href="#cb4-177"></a></span>
-<span id="cb4-178"><a href="#cb4-178"></a>    </span>
-<span id="cb4-179"><a href="#cb4-179"></a><span class="co"># VariantFiltration</span></span>
-<span id="cb4-180"><a href="#cb4-180"></a><span class="ex">gatk</span> VariantFiltration -R <span class="va">$GENOME</span>.fasta -V myfile_HC.vcf --filter-expression <span class="st">&quot;DP&lt;5&quot;</span> --filter-name <span class="st">&quot;DP&quot;</span> -O myfile_HC_VF.vcf</span>
-<span id="cb4-181"><a href="#cb4-181"></a></span>
-<span id="cb4-182"><a href="#cb4-182"></a><span class="co">#FINAL_MERGE=$( echo &quot;cd $( pwd ) ; picard MergeSamFiles USE_THREADING=true SO=coordinate $BAMS O=all.csorted.combined.bam&quot; | qsub -V -l select=1:ncpus=${NCORES}:mem=96GB,walltime=5:00:00 -N Final_merge ) # 5248672.pbsserver</span></span>
-<span id="cb4-183"><a href="#cb4-183"></a><span class="co"># FINAL_MERGE_ID=$( echo $FINAL_MERGE | grep -P -o &#39;[\d\.]+(?!\.\w)&#39; | sed &#39;s/\.$//&#39;)</span></span>
+<span id="cb4-167"><a href="#cb4-167"></a><span class="ex">vcf-concat</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>*vcf.gz <span class="kw">|</span> <span class="ex">bgzip</span> <span class="op">&gt;</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.vcf.gz</span>
+<span id="cb4-168"><a href="#cb4-168"></a><span class="co"># index that file</span></span>
+<span id="cb4-169"><a href="#cb4-169"></a><span class="ex">bcftools</span> index <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.vcf.gz</span>
+<span id="cb4-170"><a href="#cb4-170"></a></span>
+<span id="cb4-171"><a href="#cb4-171"></a><span class="co"># call variants from just MT (not needed if we have the entire VCF)</span></span>
+<span id="cb4-172"><a href="#cb4-172"></a><span class="co"># GENOVCFMT_ID=$(echo &quot;cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \&quot;-Xmx4g\&quot; -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB -L MT -new-qual -O ${BATCH}.all.${ALIGNER}.${REF}.MT.vcf&quot;  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeMT -W depend=afterok:$DBIMPORT_ID | egrep -o &quot;^[0-9]+&quot;)</span></span>
+<span id="cb4-173"><a href="#cb4-173"></a></span>
+<span id="cb4-174"><a href="#cb4-174"></a>    </span>
+<span id="cb4-175"><a href="#cb4-175"></a><span class="co"># VariantFiltration</span></span>
+<span id="cb4-176"><a href="#cb4-176"></a><span class="ex">conda</span> activate <span class="va">$CONDA_NAME</span></span>
+<span id="cb4-177"><a href="#cb4-177"></a><span class="co"># filter with SnpSift to make sure that all genotypes have DP&gt;5</span></span>
+<span id="cb4-178"><a href="#cb4-178"></a><span class="fu">zcat</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.vcf.gz <span class="kw">|</span> <span class="ex">SnpSift</span> filter <span class="st">&quot;( GEN[?].DP &gt; 4 )&quot;</span> <span class="kw">|</span> <span class="ex">pigz</span> -c <span class="op">&gt;</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.DP5.vcf.gz</span>
+<span id="cb4-179"><a href="#cb4-179"></a></span>
+<span id="cb4-180"><a href="#cb4-180"></a><span class="co"># Add genotype quality to the filter</span></span>
+<span id="cb4-181"><a href="#cb4-181"></a><span class="fu">zcat</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.vcf.gz <span class="kw">|</span> <span class="ex">SnpSift</span> filter <span class="st">&quot;( ! GEN[*].DP &lt; 5 ) &amp; ( ! GEN[*].GQ &lt; 30 )&quot;</span> <span class="kw">|</span> <span class="ex">pigz</span> -c <span class="op">&gt;</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.DP5.vcf.gz</span>
+<span id="cb4-182"><a href="#cb4-182"></a></span>
+<span id="cb4-183"><a href="#cb4-183"></a><span class="co">#gatk VariantFiltration -R $GENOME.fasta -V myfile_HC.vcf --filter-expression &quot;DP&lt;5&quot; --filter-name &quot;DP&quot; -O myfile_HC_VF.vcf</span></span>
 <span id="cb4-184"><a href="#cb4-184"></a></span>
-<span id="cb4-185"><a href="#cb4-185"></a><span class="co"># save read groups to file (useful for vcf later on)</span></span>
-<span id="cb4-186"><a href="#cb4-186"></a></span>
-<span id="cb4-187"><a href="#cb4-187"></a><span class="co"># Extract mitocondrial sequences</span></span>
-<span id="cb4-188"><a href="#cb4-188"></a><span class="ex">samtools</span> faidx <span class="va">$GENOME</span>.fasta</span>
-<span id="cb4-189"><a href="#cb4-189"></a><span class="fu">grep</span> <span class="st">&quot;chromosome X&quot;</span> <span class="va">$GENOME</span>.fasta <span class="kw">|</span> <span class="fu">sed</span> <span class="st">&#39;s/&gt;//&#39;</span> <span class="op">&gt;</span> <span class="va">$REF</span>.chrX</span>
-<span id="cb4-190"><a href="#cb4-190"></a><span class="co"># gawk &#39;{sub(&quot;&gt;&quot;,  &quot;&quot;, $1); print $1}&#39; </span></span>
-<span id="cb4-191"><a href="#cb4-191"></a><span class="co"># commands to extract the consensus sequence for each mitochondrial (Chr X)contig</span></span>
-<span id="cb4-192"><a href="#cb4-192"></a></span>
-<span id="cb4-193"><a href="#cb4-193"></a><span class="va">MT_CONSENS_ID=$(</span> <span class="bu">echo</span> <span class="st">&quot;cd </span><span class="va">$(</span> <span class="bu">pwd</span> <span class="va">)</span><span class="st"> ; source ~/.bashrc; conda activate </span><span class="va">$CONDA_NAME</span><span class="st">; parallel --dry-run &#39;samtools faidx -r Cooinda.chrX </span><span class="va">$GENOME</span><span class="st">.fasta | bcftools consensus -H 1pIu -s {} </span><span class="va">${BATCH}</span><span class="st">.</span><span class="va">${ALIGNER}</span><span class="st">.</span><span class="va">${REF}</span><span class="st">.norm.vcf.gz &gt; {}.chrX.fa&#39; ::: </span><span class="dt">\$</span><span class="st">(gawk -F [&quot;</span>\t<span class="st">&quot;:] &#39;{print </span><span class="dt">\$</span><span class="st">3}&#39;  </span><span class="va">${BATCH}</span><span class="st">.</span><span class="va">${ALIGNER}</span><span class="st">.</span><span class="va">${REF}</span><span class="st">.all.read_groups.txt) &quot;</span> <span class="kw">|</span> <span class="ex">qsub</span> -V -l select=1:ncpus=<span class="va">${NCORES}</span>:mem=8GB,walltime=1:00:00 -N chrX_consensus -W depend=afterok:<span class="va">$CALL_VARS_ID</span> <span class="kw">|</span> <span class="fu">egrep</span> -o <span class="st">&quot;^[0-9]+&quot;</span><span class="va">)</span></span>
-<span id="cb4-194"><a href="#cb4-194"></a><span class="co"># extract all reads mapping to Chr X</span></span>
-<span id="cb4-195"><a href="#cb4-195"></a><span class="ex">parallel</span> --dry-run <span class="st">&quot;samtools faidx -r Cooinda.chrX </span><span class="va">$GENOME</span><span class="st">.fasta | bcftools consensus -H 1pIu -s {} </span><span class="va">${BATCH</span><span class="er">.${ALIGNER</span><span class="va">}</span><span class="st">.</span><span class="va">${REF}</span><span class="st">.norm.vcf.gz &gt; </span><span class="va">${BATCH}</span><span class="st">.</span><span class="va">${ALIGNER}</span><span class="st">.</span><span class="va">${REF}</span><span class="st">.{}.chrX.fa&quot;</span> ::: <span class="va">$(</span><span class="fu">gawk</span> -F [<span class="st">&quot;\t&quot;</span>:] <span class="st">&#39;{print $3}&#39;</span>  <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.all.read_groups.txt<span class="va">)</span> <span class="op">&gt;</span> extract_chrX.cmds</span>
-<span id="cb4-196"><a href="#cb4-196"></a><span class="co">#parallel --dry-run &quot;bcftools mpileup --threads \$NCPUS -f $GENOME.fasta -r {1} {2} | bcftools call  --threads \$NCPUS -c | vcfutils.pl vcf2fq &gt;&gt; {2.}.chrX.fq&quot; ::: $( cat $REF.chrX )  ::: *.bam &gt; extract_chrX.cmds</span></span>
-<span id="cb4-197"><a href="#cb4-197"></a><span class="co"># create a pbs file</span></span>
-<span id="cb4-198"><a href="#cb4-198"></a><span class="fu">sed</span> -E <span class="st">&#39;s/mem=[0-9]+GB,walltime=[0-9]+:00:00/mem=4GB,walltime=0:30:00/&#39;</span>   <span class="va">${RUN}</span>.pbspro <span class="op">&gt;</span> extract_chrX.pbspro</span>
-<span id="cb4-199"><a href="#cb4-199"></a><span class="co"># run jobs as an array</span></span>
-<span id="cb4-200"><a href="#cb4-200"></a><span class="va">MT_CONSENS_ID=$(</span> <span class="ex">qsub</span> -J1-<span class="va">$(</span> <span class="fu">cat</span> extract_chrX.cmds <span class="kw">|</span> <span class="fu">wc</span> -l <span class="va">)</span> -N chrX_consensus  -vCMDS_FILE=extract_chrX.cmds -W depend=afterok:<span class="va">$CALL_VARS_ID</span> extract_chrX.pbspro <span class="kw">|</span> <span class="fu">egrep</span> -o <span class="st">&quot;^[0-9]+&quot;</span><span class="va">)</span> </span>
-<span id="cb4-201"><a href="#cb4-201"></a><span class="bu">echo</span> <span class="st">&quot;Finished extracting consensus sequence job array&quot;</span> <span class="kw">|</span> <span class="ex">qsub</span> -l select=1:ncpus=1:mem=4MB,walltime=00:01:00 -N cons_finish -m e -M i.bar@griffith.edu.au -W depend=afterok:<span class="va">$MT_CONSENS_ID[]</span></span>
-<span id="cb4-202"><a href="#cb4-202"></a><span class="co"># transfer the sequences to CloudStor</span></span>
-<span id="cb4-203"><a href="#cb4-203"></a><span class="ex">conda</span> activate base</span>
-<span id="cb4-204"><a href="#cb4-204"></a><span class="ex">rclone</span> copy -L -P <span class="kw">`</span><span class="bu">pwd</span><span class="kw">`</span>/ChrX_consensus_seqs CloudStor:Shared/GRIFFITH-Ford-Crop-Genetics-Lab/Dingo/ChrX_consensus_seqs</span>
-<span id="cb4-205"><a href="#cb4-205"></a><span class="co"># run jobs in a single node</span></span>
-<span id="cb4-206"><a href="#cb4-206"></a><span class="co"># CHRX_ID=$( echo &quot;cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; cat extract_chrX.cmds | parallel&quot;  | qsub -l select=1:ncpus=${NCORES}:mem=32GB,walltime=3:00:00 -N extract_chrX | egrep -o &quot;^[0-9]+&quot;) </span></span>
-<span id="cb4-207"><a href="#cb4-207"></a></span>
-<span id="cb4-208"><a href="#cb4-208"></a><span class="co"># find and remove empty files</span></span>
-<span id="cb4-209"><a href="#cb4-209"></a><span class="fu">find</span> . -size 0 -exec rm {} <span class="ex">+</span> </span>
-<span id="cb4-210"><a href="#cb4-210"></a></span>
-<span id="cb4-211"><a href="#cb4-211"></a><span class="bu">echo</span> <span class="st">&quot;########################### Job Execution History #############################&quot;</span></span>
-<span id="cb4-212"><a href="#cb4-212"></a><span class="bu">echo</span> <span class="st">&quot;Completed the following run: &#39;</span><span class="va">$RUN</span><span class="st">&#39; on </span><span class="va">$(</span><span class="fu">date</span><span class="va">)</span><span class="st">&quot;</span></span>
-<span id="cb4-213"><a href="#cb4-213"></a><span class="bu">echo</span> -e <span class="st">&quot;Bowtie2 mapping details:\n\tArrayID = </span><span class="va">$ALIGN_ID</span><span class="st">&quot;</span></span>
-<span id="cb4-214"><a href="#cb4-214"></a><span class="ex">qstat</span> -xftw <span class="va">$ALIGN_ID[]</span> <span class="kw">|</span> <span class="fu">egrep</span> <span class="st">&quot;resources_used|Exit_status|array_index = &quot;</span> <span class="co"># | gwak -v ORS=&quot;; &quot; &#39;1&#39;</span></span>
-<span id="cb4-215"><a href="#cb4-215"></a><span class="bu">echo</span> -e <span class="st">&quot;Post-trim QC details:\n\tJobID = </span><span class="va">$QC_JOB_ID</span><span class="st">&quot;</span></span>
-<span id="cb4-216"><a href="#cb4-216"></a><span class="ex">qstat</span> -xftw <span class="va">$QC_JOB_ID</span> <span class="kw">|</span> <span class="fu">egrep</span> <span class="st">&quot;resources_used|Exit_status&quot;</span></span>
-<span id="cb4-217"><a href="#cb4-217"></a><span class="bu">echo</span> -e <span class="st">&quot;Qualimap details:\n\tJobID = </span><span class="va">$QUALIMAP_JOB_ID</span><span class="st">&quot;</span> <span class="co"># , $(grep &#39;ExitStatus&#39; *.e$QUALIMAP_JOB_ID*)&quot;</span></span>
-<span id="cb4-218"><a href="#cb4-218"></a><span class="ex">qstat</span> -xftw <span class="va">$QUALIMAP_JOB_ID</span> <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;resources_used|Exit_status&quot;</span></span>
-<span id="cb4-219"><a href="#cb4-219"></a><span class="bu">echo</span> -e <span class="st">&quot;MultiQC details:\n\tJobID = </span><span class="va">$MULTIQC_JOB_ID</span><span class="st">&quot;</span></span>
-<span id="cb4-220"><a href="#cb4-220"></a><span class="ex">qstat</span> -xftw <span class="va">$MULTIQC_JOB_ID</span> <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;resources_used|Exit_status&quot;</span></span>
-<span id="cb4-221"><a href="#cb4-221"></a><span class="bu">echo</span> -e <span class="st">&quot;Mapping stats details:\n\tJobID = </span><span class="va">$STATS_JOB_ID</span><span class="st">&quot;</span></span>
-<span id="cb4-222"><a href="#cb4-222"></a><span class="ex">qstat</span> -xftw <span class="va">$STATS_JOB_ID</span> <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;resources_used|Exit_status&quot;</span></span>
-<span id="cb4-223"><a href="#cb4-223"></a><span class="bu">echo</span> -e <span class="st">&quot;Final BAM merge details:\n\tJobID = </span><span class="va">$FINAL_MERGE_ID</span><span class="st">&quot;</span></span>
-<span id="cb4-224"><a href="#cb4-224"></a><span class="ex">qstat</span> -xftw <span class="va">$FINAL_MERGE_ID</span> <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;resources_used|Exit_status&quot;</span></span>
-<span id="cb4-225"><a href="#cb4-225"></a><span class="bu">echo</span> -e <span class="st">&quot;Software used:\n\t bowtie2 v</span><span class="va">$(</span><span class="ex">bowtie2</span> --version <span class="op">2&gt;&amp;1</span> <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;NR==1{print $NF}&#39;</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">samblaster</span> --version <span class="op">2&gt;&amp;1</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">bbduk.sh</span> --version <span class="op">2&gt;&amp;1</span> <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;BBMap version&quot;</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">sambamba</span> --version <span class="op">2&gt;&amp;1</span> <span class="kw">|</span> <span class="fu">head</span> -n1<span class="va">)</span><span class="st">\n\t Picard </span><span class="va">$(</span><span class="ex">picard</span> ViewSam --version <span class="op">2&gt;&amp;1</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">samtools</span> --version <span class="op">2&gt;&amp;1</span> <span class="kw">|</span> <span class="fu">head</span> -n1<span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">fastqc</span> --version <span class="op">2&gt;&amp;1</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">qualimap</span> --version <span class="op">2&gt;&amp;1</span> <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;NR==4&#39;</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">multiqc</span> --version <span class="op">2&gt;&amp;1</span><span class="va">)</span><span class="st">&quot;</span> </span>
-<span id="cb4-226"><a href="#cb4-226"></a><span class="co"># Check that all jobs finished successfuly</span></span>
-<span id="cb4-227"><a href="#cb4-227"></a><span class="co"># find . -regextype posix-egrep -regex &#39;\./.*\.e[0-9]{5}.*&#39; | xargs grep &quot;ExitStatus&quot; #  *m.e$JOB_ID.*</span></span>
-<span id="cb4-228"><a href="#cb4-228"></a><span class="va">END_TIME=$(</span><span class="fu">date</span> +%s<span class="va">)</span></span>
-<span id="cb4-229"><a href="#cb4-229"></a><span class="va">TOTAL_SECS=$((</span> END_TIME - START_TIME <span class="va">))</span></span>
-<span id="cb4-230"><a href="#cb4-230"></a><span class="co"># LAPSED_TIME=$( date -ud &quot;@${TOTAL_SECS}&quot; + &#39;$((%s/3600/24)) days %T&#39; )</span></span>
-<span id="cb4-231"><a href="#cb4-231"></a><span class="bu">eval</span> <span class="st">&quot;echo </span><span class="va">$(</span><span class="fu">date</span> -ud <span class="st">&quot;@</span><span class="va">$TOTAL_SECS</span><span class="st">&quot;</span> +<span class="st">&#39;Total runtime: $((%s/3600/24)) days %T&#39;</span><span class="va">)</span><span class="st">&quot;</span></span>
-<span id="cb4-232"><a href="#cb4-232"></a><span class="bu">echo</span> <span class="st">&quot;###############################################################################&quot;</span></span>
-<span id="cb4-233"><a href="#cb4-233"></a></span>
-<span id="cb4-234"><a href="#cb4-234"></a></span>
-<span id="cb4-235"><a href="#cb4-235"></a><span class="co"># Done!</span></span></code></pre></div>
+<span id="cb4-185"><a href="#cb4-185"></a><span class="co">#FINAL_MERGE=$( echo &quot;cd $( pwd ) ; picard MergeSamFiles USE_THREADING=true SO=coordinate $BAMS O=all.csorted.combined.bam&quot; | qsub -V -l select=1:ncpus=${NCORES}:mem=96GB,walltime=5:00:00 -N Final_merge ) # 5248672.pbsserver</span></span>
+<span id="cb4-186"><a href="#cb4-186"></a><span class="co"># FINAL_MERGE_ID=$( echo $FINAL_MERGE | grep -P -o &#39;[\d\.]+(?!\.\w)&#39; | sed &#39;s/\.$//&#39;)</span></span>
+<span id="cb4-187"><a href="#cb4-187"></a></span>
+<span id="cb4-188"><a href="#cb4-188"></a><span class="co"># save read groups to file (useful for vcf later on)</span></span>
+<span id="cb4-189"><a href="#cb4-189"></a></span>
+<span id="cb4-190"><a href="#cb4-190"></a></span>
+<span id="cb4-191"><a href="#cb4-191"></a></span>
+<span id="cb4-192"><a href="#cb4-192"></a><span class="co"># find and remove empty files</span></span>
+<span id="cb4-193"><a href="#cb4-193"></a><span class="fu">find</span> . -size 0 -exec rm {} <span class="ex">+</span> </span>
+<span id="cb4-194"><a href="#cb4-194"></a></span>
+<span id="cb4-195"><a href="#cb4-195"></a><span class="bu">echo</span> <span class="st">&quot;########################### Job Execution History #############################&quot;</span></span>
+<span id="cb4-196"><a href="#cb4-196"></a><span class="bu">echo</span> <span class="st">&quot;Completed the following run: &#39;</span><span class="va">$RUN</span><span class="st">&#39; on </span><span class="va">$(</span><span class="fu">date</span><span class="va">)</span><span class="st">&quot;</span></span>
+<span id="cb4-197"><a href="#cb4-197"></a><span class="bu">echo</span> -e <span class="st">&quot;Bowtie2 mapping details:\n\tArrayID = </span><span class="va">$ALIGN_ID</span><span class="st">&quot;</span></span>
+<span id="cb4-198"><a href="#cb4-198"></a><span class="ex">qstat</span> -xftw <span class="va">$ALIGN_ID[]</span> <span class="kw">|</span> <span class="fu">egrep</span> <span class="st">&quot;resources_used|Exit_status|array_index = &quot;</span> <span class="co"># | gwak -v ORS=&quot;; &quot; &#39;1&#39;</span></span>
+<span id="cb4-199"><a href="#cb4-199"></a><span class="bu">echo</span> -e <span class="st">&quot;Post-trim QC details:\n\tJobID = </span><span class="va">$QC_JOB_ID</span><span class="st">&quot;</span></span>
+<span id="cb4-200"><a href="#cb4-200"></a><span class="ex">qstat</span> -xftw <span class="va">$QC_JOB_ID</span> <span class="kw">|</span> <span class="fu">egrep</span> <span class="st">&quot;resources_used|Exit_status&quot;</span></span>
+<span id="cb4-201"><a href="#cb4-201"></a><span class="bu">echo</span> -e <span class="st">&quot;Qualimap details:\n\tJobID = </span><span class="va">$QUALIMAP_JOB_ID</span><span class="st">&quot;</span> <span class="co"># , $(grep &#39;ExitStatus&#39; *.e$QUALIMAP_JOB_ID*)&quot;</span></span>
+<span id="cb4-202"><a href="#cb4-202"></a><span class="ex">qstat</span> -xftw <span class="va">$QUALIMAP_JOB_ID</span> <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;resources_used|Exit_status&quot;</span></span>
+<span id="cb4-203"><a href="#cb4-203"></a><span class="bu">echo</span> -e <span class="st">&quot;MultiQC details:\n\tJobID = </span><span class="va">$MULTIQC_JOB_ID</span><span class="st">&quot;</span></span>
+<span id="cb4-204"><a href="#cb4-204"></a><span class="ex">qstat</span> -xftw <span class="va">$MULTIQC_JOB_ID</span> <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;resources_used|Exit_status&quot;</span></span>
+<span id="cb4-205"><a href="#cb4-205"></a><span class="bu">echo</span> -e <span class="st">&quot;Mapping stats details:\n\tJobID = </span><span class="va">$STATS_JOB_ID</span><span class="st">&quot;</span></span>
+<span id="cb4-206"><a href="#cb4-206"></a><span class="ex">qstat</span> -xftw <span class="va">$STATS_JOB_ID</span> <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;resources_used|Exit_status&quot;</span></span>
+<span id="cb4-207"><a href="#cb4-207"></a><span class="bu">echo</span> -e <span class="st">&quot;Final BAM merge details:\n\tJobID = </span><span class="va">$FINAL_MERGE_ID</span><span class="st">&quot;</span></span>
+<span id="cb4-208"><a href="#cb4-208"></a><span class="ex">qstat</span> -xftw <span class="va">$FINAL_MERGE_ID</span> <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;resources_used|Exit_status&quot;</span></span>
+<span id="cb4-209"><a href="#cb4-209"></a><span class="bu">echo</span> -e <span class="st">&quot;Software used:\n\t bowtie2 v</span><span class="va">$(</span><span class="ex">bowtie2</span> --version <span class="op">2&gt;&amp;1</span> <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;NR==1{print $NF}&#39;</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">samblaster</span> --version <span class="op">2&gt;&amp;1</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">bbduk.sh</span> --version <span class="op">2&gt;&amp;1</span> <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;BBMap version&quot;</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">sambamba</span> --version <span class="op">2&gt;&amp;1</span> <span class="kw">|</span> <span class="fu">head</span> -n1<span class="va">)</span><span class="st">\n\t Picard </span><span class="va">$(</span><span class="ex">picard</span> ViewSam --version <span class="op">2&gt;&amp;1</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">samtools</span> --version <span class="op">2&gt;&amp;1</span> <span class="kw">|</span> <span class="fu">head</span> -n1<span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">fastqc</span> --version <span class="op">2&gt;&amp;1</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">qualimap</span> --version <span class="op">2&gt;&amp;1</span> <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;NR==4&#39;</span><span class="va">)</span><span class="st">\n\t </span><span class="va">$(</span><span class="ex">multiqc</span> --version <span class="op">2&gt;&amp;1</span><span class="va">)</span><span class="st">&quot;</span> </span>
+<span id="cb4-210"><a href="#cb4-210"></a><span class="co"># Check that all jobs finished successfuly</span></span>
+<span id="cb4-211"><a href="#cb4-211"></a><span class="co"># find . -regextype posix-egrep -regex &#39;\./.*\.e[0-9]{5}.*&#39; | xargs grep &quot;ExitStatus&quot; #  *m.e$JOB_ID.*</span></span>
+<span id="cb4-212"><a href="#cb4-212"></a><span class="va">END_TIME=$(</span><span class="fu">date</span> +%s<span class="va">)</span></span>
+<span id="cb4-213"><a href="#cb4-213"></a><span class="va">TOTAL_SECS=$((</span> END_TIME - START_TIME <span class="va">))</span></span>
+<span id="cb4-214"><a href="#cb4-214"></a><span class="co"># LAPSED_TIME=$( date -ud &quot;@${TOTAL_SECS}&quot; + &#39;$((%s/3600/24)) days %T&#39; )</span></span>
+<span id="cb4-215"><a href="#cb4-215"></a><span class="bu">eval</span> <span class="st">&quot;echo </span><span class="va">$(</span><span class="fu">date</span> -ud <span class="st">&quot;@</span><span class="va">$TOTAL_SECS</span><span class="st">&quot;</span> +<span class="st">&#39;Total runtime: $((%s/3600/24)) days %T&#39;</span><span class="va">)</span><span class="st">&quot;</span></span>
+<span id="cb4-216"><a href="#cb4-216"></a><span class="bu">echo</span> <span class="st">&quot;###############################################################################&quot;</span></span>
+<span id="cb4-217"><a href="#cb4-217"></a></span>
+<span id="cb4-218"><a href="#cb4-218"></a></span>
+<span id="cb4-219"><a href="#cb4-219"></a><span class="co"># Done!</span></span></code></pre></div>
 </div>
 <div id="call-variants" class="section level4">
 <h4>Call Variants</h4>
-<p>After alignment, variants were called from the aligned read files with either <code>mpileup</code> (from <font face="consolas">samtools/bcftools/sambamba</font>), GATK or FreeBayes or aDNA-specific tools, such as <a href="https://github.com/stschiff/sequenceTools"><font face="consolas">pileupCaller</font></a>, <font face="consolas">ARIADNA</font> <span class="citation">(Kawash <em>et al.</em> 2018)</span>, <font face="consolas">AntCaller</font> <span class="citation">(Zhou <em>et al.</em> 2017)</span> or <font face="consolas">snpAD</font> <span class="citation">(Prüfer 2018)</span>.</p>
+<p>After alignment, variants were called from the aligned read files with either <code>mpileup</code> (from <font face="consolas">samtools/bcftools/sambamba</font>), GATK (UnifiedGenotyper or HaplotypeCaller), FreeBayes<span class="citation">(Garrison and Marth 2012)</span>; or aDNA-specific tools, such as <a href="https://github.com/stschiff/sequenceTools"><font face="consolas">pileupCaller</font></a>, <font face="consolas">ARIADNA</font> <span class="citation">(Kawash <em>et al.</em> 2018)</span>, <font face="consolas">AntCaller</font> <span class="citation">(Zhou <em>et al.</em> 2017)</span> or <font face="consolas">snpAD</font> <span class="citation">(Prüfer 2018)</span>.</p>
+</div>
+<div id="pipeline-execution-with-nextfloweager" class="section level4">
+<h4>Pipeline execution with Nextflow/EAGER</h4>
+<p>The entire analysis workflow can be automated and run with <font face="consolas">EAGER</font> (v2.2.2), which was developed specifically for processing of aDNA samples and includes all the tools and approaches mentioned above (and more) <span class="citation">(Yates <em>et al.</em> 2020)</span>. <font face="consolas">EAGER</font> is implemented through <font face="consolas">Nextflow</font> (v20.10.0), a bioinformatics workflow management system <span class="citation">(Di Tommaso <em>et al.</em> 2017; Jackson <em>et al.</em> 2020)</span>.</p>
+<p>The pipeline parameters were set using the <font face="consolas">EAGER</font> <a href="https://nf-co.re/launch?pipeline=eager&amp;release=2.2.2">Launcher web app</a> and saved to <code>params.json</code> file that was used as input for the run. Read files details were provided in the <code>WWR_samples.tsv</code> file.</p>
+<p><em>Since <code>nextflow</code> is not yet installed on Griffith HPC systems, this analysis was run at the QRIS Awoonga HPC</em></p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1"></a><span class="ex">conda</span> install -n base nextflow nf-core</span>
+<span id="cb5-2"><a href="#cb5-2"></a><span class="va">DATE=</span><span class="kw">`</span><span class="fu">date</span> +%d_%m_%Y<span class="kw">`</span></span>
+<span id="cb5-3"><a href="#cb5-3"></a><span class="va">BATCH=</span>WWR_NF1</span>
+<span id="cb5-4"><a href="#cb5-4"></a><span class="va">ALIGNER=</span>bt2-local <span class="co"># bwamem # bt2-local-N1  bwaaln </span></span>
+<span id="cb5-5"><a href="#cb5-5"></a><span class="va">GENOTYPER=</span>gatkhc <span class="co"># pileupcaller</span></span>
+<span id="cb5-6"><a href="#cb5-6"></a><span class="va">RUN=</span><span class="st">&quot;</span><span class="va">${BATCH}</span><span class="st">_process_</span><span class="va">${DATE}</span><span class="st">&quot;</span> <span class="co"># day of run was 02_02_2019</span></span>
+<span id="cb5-7"><a href="#cb5-7"></a><span class="va">WORK_DIR=</span>/30days/ibar/data/Human/WWR</span>
+<span id="cb5-8"><a href="#cb5-8"></a><span class="co"># Create tmp folder</span></span>
+<span id="cb5-9"><a href="#cb5-9"></a><span class="va">TMP_DIR=$HOME</span>/30days/tmp <span class="kw">&amp;&amp;</span> <span class="fu">mkdir</span> -p <span class="va">$TMP_DIR</span> <span class="co"># on Awoonga</span></span>
+<span id="cb5-10"><a href="#cb5-10"></a><span class="co"># setup environment variable to run singularity and nextflow</span></span>
+<span id="cb5-11"><a href="#cb5-11"></a><span class="bu">printf</span> <span class="st">&#39;export SINGULARITY_CACHEDIR=/30days/ibar/.singularity\nexport SREGISTRY_DATABASE=$SINGULARITY_CACHEDIR\nexport NXF_SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR\nexport NXF_CONDA_CACHEDIR=/30days/ibar/.conda\nexport NXF_OPTS=&quot;-Xms1g -Xmx4g&quot;&#39;</span> <span class="op">&gt;&gt;</span> ~/.bashcr</span>
+<span id="cb5-12"><a href="#cb5-12"></a><span class="bu">source</span> ~/.bashrc</span>
+<span id="cb5-13"><a href="#cb5-13"></a><span class="fu">mkdir</span> -p <span class="va">$SINGULARITY_CACHEDIR</span> <span class="va">$NXF_CONDA_CACHEDIR</span></span>
+<span id="cb5-14"><a href="#cb5-14"></a></span>
+<span id="cb5-15"><a href="#cb5-15"></a><span class="va">REF_DIR=</span><span class="st">&quot;/30days/ibar/data/Human/reference_genome&quot;</span></span>
+<span id="cb5-16"><a href="#cb5-16"></a><span class="va">REF=</span><span class="st">&quot;GRCh38&quot;</span></span>
+<span id="cb5-17"><a href="#cb5-17"></a><span class="bu">[</span> <span class="ot">!</span> <span class="ot">-s</span> <span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">.fasta&quot;</span><span class="bu"> ]</span> <span class="kw">&amp;&amp;</span> <span class="ex">pigz</span> -cd <span class="va">$(</span><span class="fu">find</span> <span class="va">$REF_DIR</span> -name <span class="st">&quot;*</span><span class="va">$REF</span><span class="st">*.f*a.gz&quot;</span><span class="va">)</span> <span class="op">&gt;</span> <span class="va">$REF_DIR</span>/<span class="va">$REF</span>.fasta</span>
+<span id="cb5-18"><a href="#cb5-18"></a><span class="bu">[</span> <span class="ot">!</span> <span class="ot">-s</span> <span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">.gff&quot;</span><span class="bu"> ]</span> <span class="kw">&amp;&amp;</span> <span class="ex">pigz</span> -cd <span class="va">$(</span><span class="fu">find</span> <span class="va">$REF_DIR</span> -name <span class="st">&quot;*</span><span class="va">$REF</span><span class="st">*.gff*.gz&quot;</span><span class="va">)</span> <span class="op">&gt;</span> <span class="va">$REF_DIR</span>/<span class="va">$REF</span>.gff</span>
+<span id="cb5-19"><a href="#cb5-19"></a><span class="co">#cat $REF_DIR/Dingo_MT_MH035676.1.fasta &gt;&gt; $REF_DIR/$REF.fasta</span></span>
+<span id="cb5-20"><a href="#cb5-20"></a></span>
+<span id="cb5-21"><a href="#cb5-21"></a><span class="va">GENOME=</span><span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">&quot;</span></span>
+<span id="cb5-22"><a href="#cb5-22"></a><span class="va">FQ_DIR=${WORK_DIR}</span>/fastq_files</span>
+<span id="cb5-23"><a href="#cb5-23"></a><span class="co"># copy input files from CloudStor</span></span>
+<span id="cb5-24"><a href="#cb5-24"></a><span class="co"># ln -s ~/30days/data ~/aDNA # on Awoonga</span></span>
+<span id="cb5-25"><a href="#cb5-25"></a><span class="co"># mkdir -p $FQ_DIR &amp;&amp; cd $FQ_DIR</span></span>
+<span id="cb5-26"><a href="#cb5-26"></a><span class="ex">rclone</span> copy -P CloudStor:aDNA/Human/WWR/fastq_files <span class="va">$FQ_DIR</span></span>
+<span id="cb5-27"><a href="#cb5-27"></a></span>
+<span id="cb5-28"><a href="#cb5-28"></a><span class="co"># create working folder for the run</span></span>
+<span id="cb5-29"><a href="#cb5-29"></a><span class="fu">mkdir</span> -p <span class="va">${WORK_DIR}</span>/<span class="va">${RUN}</span> <span class="co"># on Awoonga</span></span>
+<span id="cb5-30"><a href="#cb5-30"></a><span class="bu">cd</span> !$</span>
+<span id="cb5-31"><a href="#cb5-31"></a></span>
+<span id="cb5-32"><a href="#cb5-32"></a><span class="co"># create sample table</span></span>
+<span id="cb5-33"><a href="#cb5-33"></a><span class="co"># wget https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv</span></span>
+<span id="cb5-34"><a href="#cb5-34"></a><span class="fu">find</span> <span class="va">$FQ_DIR</span> -maxdepth 1 -name <span class="st">&quot;UWW1*_1*.f*q.gz&quot;</span> <span class="kw">|</span> <span class="fu">sort</span> <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;{n=split($1,a,&quot;/&quot;); infile2=gensub(&quot;_1\\.&quot;, &quot;_2.&quot;, &quot;1&quot;, $1); match(a[n], /(.+)_1\..*f.*q.gz/, sample_ids); printf &quot;%s\t%s\t1\t4\tPE\tHuman\tdouble\thalf\t%s\t%s\tNA\n&quot;, sample_ids[1], sample_ids[1], $1, infile2}&#39;</span> <span class="kw">|</span> <span class="fu">cat</span> <span class="op">&lt;(</span><span class="ex">curl</span> https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv<span class="op">)</span> - <span class="op">&gt;</span> <span class="va">$BATCH</span>.tsv</span>
+<span id="cb5-35"><a href="#cb5-35"></a></span>
+<span id="cb5-36"><a href="#cb5-36"></a><span class="co"># Use the EAGER launcher to set run parameters and then edit the json file accordingly</span></span>
+<span id="cb5-37"><a href="#cb5-37"></a><span class="fu">sed</span> -r <span class="st">&quot;s/: </span><span class="dt">\&quot;</span><span class="st">.+\.tsv</span><span class="dt">\&quot;</span><span class="st">/: </span><span class="dt">\&quot;</span><span class="va">$BATCH</span><span class="st">.tsv</span><span class="dt">\&quot;</span><span class="st">/&quot;</span> <span class="va">$WORK_DIR</span>/WWR_aDNA_NF_default.json <span class="op">&gt;</span> <span class="va">$BATCH</span>.<span class="va">$REF</span>.<span class="va">$ALIGNER</span>.<span class="va">$GENOTYPER</span>.json</span>
+<span id="cb5-38"><a href="#cb5-38"></a><span class="co"># or in subsequent runs when the bam files already exist</span></span>
+<span id="cb5-39"><a href="#cb5-39"></a><span class="co"># sed -r &quot;s/: \&quot;.+\.tsv\&quot;/: \&quot;$BATCH.tsv\&quot;/&quot; ../Dingo_aDNA_NF_reuseBAM.json &gt; $BATCH.$REF.$ALIGNER.$GENOTYPER.json</span></span>
+<span id="cb5-40"><a href="#cb5-40"></a></span>
+<span id="cb5-41"><a href="#cb5-41"></a><span class="co"># run EAGER with the parameters file and custom profile (qris.config)</span></span>
+<span id="cb5-42"><a href="#cb5-42"></a><span class="ex">nextflow</span> run /home/ibar/.nextflow/assets/nf-core/eager_test/ -params-file <span class="va">$BATCH</span>.<span class="va">$REF</span>.<span class="va">$ALIGNER</span>.<span class="va">$GENOTYPER</span>.json -c /home/ibar/.nextflow/qris.config</span></code></pre></div>
+</div>
+<div id="variant-filtration-and-analysis" class="section level4">
+<h4>Variant filtration and analysis</h4>
+<div id="individual-samples" class="section level5">
+<h5>Individual samples</h5>
+<p>Use the <code>vcf</code> file that was produced using the samples separately to determine the error rate and confirm that there are no contaminations and that they indeed originate from the same individual. To do that, we will filter the SNPs to include only ones that are present in all samples (<code>DP&gt;5</code>), then calculate error rate. In addition, combine with external data (a subset of the 2,500 genomes SNPs) and calculate genetic distance and PCA.</p>
+<p>Filtering criteria: 1. Genotype <code>DP&gt;5</code><br />
+2. Genotype present in all samples<br />
+3. Genotype is a SNP and not indel<br />
+4. Genotype is not “weird” (<code>1|1:0,5:5:15:1|1:10507968_A_G:225,15,0:10507968</code>) - use <code>( ! exists GEN[?].PGT)</code></p>
+<p>Filtering was performed with a combination of SnpSift v4.3t <span class="citation">(Ruden <em>et al.</em> 2012)</span> and gawk.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1"></a><span class="co"># VariantFiltration </span></span>
+<span id="cb6-2"><a href="#cb6-2"></a><span class="co"># this analysis on Griffith HPC</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a><span class="fu">zcat</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.vcf.gz <span class="kw">|</span> <span class="ex">SnpSift</span> filter <span class="st">&quot;( GEN[?].DP &gt; 5 ) &amp; ( GEN[?].GT != &#39;./.&#39; )&quot;</span> <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;{if ($0 ~ /^#/ || (length($4)==1 &amp;&amp; length($5)==1))print}&#39;</span> <span class="kw">|</span> <span class="ex">pigz</span> -c <span class="op">&gt;</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.DP5.GT.snps.vcf.gz</span>
+<span id="cb6-4"><a href="#cb6-4"></a><span class="co"># check how many variants left</span></span>
+<span id="cb6-5"><a href="#cb6-5"></a><span class="fu">zcat</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.DP5.GT.snps.vcf.gz <span class="kw">|</span> <span class="fu">grep</span> -c -v <span class="st">&quot;^##&quot;</span> <span class="co"># 1795</span></span></code></pre></div>
+</div>
+</div>
+<div id="combined-samples" class="section level4">
+<h4>Combined samples</h4>
+<p>Once the samples were confirmed to be of the same individual and no contaminations, we can combine the raw sequencing data and run the pipeline as a single sample.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1"></a><span class="ex">conda</span> install -n base nextflow nf-core</span>
+<span id="cb7-2"><a href="#cb7-2"></a><span class="va">DATE=</span><span class="kw">`</span><span class="fu">date</span> +%d_%m_%Y<span class="kw">`</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a><span class="va">BATCH=</span>WWR_NF_combined</span>
+<span id="cb7-4"><a href="#cb7-4"></a><span class="va">ALIGNER=</span>bt2-local <span class="co"># bt2-local-N1  bwaaln  bwamem</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a><span class="va">GENOTYPER=</span>gatkhc <span class="co"># gatkug  freebayes</span></span>
+<span id="cb7-6"><a href="#cb7-6"></a><span class="va">RUN=</span><span class="st">&quot;</span><span class="va">${BATCH}</span><span class="st">_process_</span><span class="va">${DATE}</span><span class="st">&quot;</span> <span class="co"># day of run was 02_02_2019</span></span>
+<span id="cb7-7"><a href="#cb7-7"></a><span class="va">WORK_DIR=</span>/30days/ibar/data/Human/WWR</span>
+<span id="cb7-8"><a href="#cb7-8"></a><span class="co"># Create tmp folder</span></span>
+<span id="cb7-9"><a href="#cb7-9"></a><span class="va">TMP_DIR=$HOME</span>/30days/tmp <span class="kw">&amp;&amp;</span> <span class="fu">mkdir</span> -p <span class="va">$TMP_DIR</span> <span class="co"># on Awoonga</span></span>
+<span id="cb7-10"><a href="#cb7-10"></a><span class="co"># setup environment variable to run singularity and nextflow</span></span>
+<span id="cb7-11"><a href="#cb7-11"></a><span class="bu">printf</span> <span class="st">&#39;export SINGULARITY_CACHEDIR=/30days/ibar/.singularity\nexport SREGISTRY_DATABASE=$SINGULARITY_CACHEDIR\nexport NXF_SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR\nexport NXF_CONDA_CACHEDIR=/30days/ibar/.conda\nexport NXF_OPTS=&quot;-Xms1g -Xmx4g&quot;&#39;</span> <span class="op">&gt;&gt;</span> ~/.bashcr</span>
+<span id="cb7-12"><a href="#cb7-12"></a><span class="bu">source</span> ~/.bashrc</span>
+<span id="cb7-13"><a href="#cb7-13"></a><span class="fu">mkdir</span> -p <span class="va">$SINGULARITY_CACHEDIR</span> <span class="va">$NXF_CONDA_CACHEDIR</span></span>
+<span id="cb7-14"><a href="#cb7-14"></a></span>
+<span id="cb7-15"><a href="#cb7-15"></a><span class="va">REF_DIR=</span><span class="st">&quot;/30days/ibar/data/Human/reference_genomes&quot;</span></span>
+<span id="cb7-16"><a href="#cb7-16"></a><span class="va">REF=</span><span class="st">&quot;GRCh38&quot;</span></span>
+<span id="cb7-17"><a href="#cb7-17"></a><span class="bu">[</span> <span class="ot">!</span> <span class="ot">-s</span> <span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">.fasta&quot;</span><span class="bu"> ]</span> <span class="kw">&amp;&amp;</span> <span class="ex">pigz</span> -cd <span class="va">$(</span><span class="fu">find</span> <span class="va">$REF_DIR</span> -iname <span class="st">&quot;*</span><span class="va">$REF</span><span class="st">*.f*a.gz&quot;</span><span class="va">)</span> <span class="op">&gt;</span> <span class="va">$REF_DIR</span>/<span class="va">$REF</span>.fasta</span>
+<span id="cb7-18"><a href="#cb7-18"></a><span class="bu">[</span> <span class="ot">!</span> <span class="ot">-s</span> <span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">.gff&quot;</span><span class="bu"> ]</span> <span class="kw">&amp;&amp;</span> <span class="ex">pigz</span> -cd <span class="va">$(</span><span class="fu">find</span> <span class="va">$REF_DIR</span> -iname <span class="st">&quot;*</span><span class="va">$REF</span><span class="st">*.gff*.gz&quot;</span><span class="va">)</span> <span class="op">&gt;</span> <span class="va">$REF_DIR</span>/<span class="va">$REF</span>.gff</span>
+<span id="cb7-19"><a href="#cb7-19"></a><span class="co">#cat $REF_DIR/Dingo_MT_MH035676.1.fasta &gt;&gt; $REF_DIR/$REF.fasta</span></span>
+<span id="cb7-20"><a href="#cb7-20"></a></span>
+<span id="cb7-21"><a href="#cb7-21"></a><span class="va">GENOME=</span><span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">&quot;</span></span>
+<span id="cb7-22"><a href="#cb7-22"></a><span class="va">FQ_DIR=${WORK_DIR}</span>/fastq_files</span>
+<span id="cb7-23"><a href="#cb7-23"></a><span class="fu">cat</span> <span class="va">$FQ_DIR</span>/UWW1_*_1.fastq.gz <span class="op">&gt;</span> <span class="va">$FQ_DIR</span>/combined_WWR_1.fastq.gz</span>
+<span id="cb7-24"><a href="#cb7-24"></a><span class="fu">cat</span> <span class="va">$FQ_DIR</span>/UWW1_*_2.fastq.gz <span class="op">&gt;</span> <span class="va">$FQ_DIR</span>/combined_WWR_2.fastq.gz</span>
+<span id="cb7-25"><a href="#cb7-25"></a><span class="co"># copy input files from CloudStor</span></span>
+<span id="cb7-26"><a href="#cb7-26"></a><span class="co"># ln -s ~/30days/data ~/aDNA # on Awoonga</span></span>
+<span id="cb7-27"><a href="#cb7-27"></a><span class="co"># mkdir -p $FQ_DIR &amp;&amp; cd $FQ_DIR</span></span>
+<span id="cb7-28"><a href="#cb7-28"></a><span class="ex">rclone</span> copy -P CloudStor:aDNA/Human/WWR/fastq_files <span class="va">$FQ_DIR</span></span>
+<span id="cb7-29"><a href="#cb7-29"></a></span>
+<span id="cb7-30"><a href="#cb7-30"></a><span class="co"># create working folder for the run</span></span>
+<span id="cb7-31"><a href="#cb7-31"></a><span class="fu">mkdir</span> -p <span class="va">${WORK_DIR}</span>/<span class="va">${RUN}</span> <span class="co"># on Awoonga</span></span>
+<span id="cb7-32"><a href="#cb7-32"></a><span class="bu">cd</span> !$</span>
+<span id="cb7-33"><a href="#cb7-33"></a></span>
+<span id="cb7-34"><a href="#cb7-34"></a><span class="co"># create sample table</span></span>
+<span id="cb7-35"><a href="#cb7-35"></a><span class="co"># wget https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv</span></span>
+<span id="cb7-36"><a href="#cb7-36"></a><span class="fu">find</span> <span class="va">$FQ_DIR</span> -maxdepth 1 -name <span class="st">&quot;combined*_1*.f*q.gz&quot;</span> <span class="kw">|</span> <span class="fu">sort</span> <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;{n=split($1,a,&quot;/&quot;); infile2=gensub(&quot;_1\\.&quot;, &quot;_2.&quot;, &quot;1&quot;, $1); match(a[n], /(.+)_1\..*f.*q.gz/, sample_ids); printf &quot;%s\t%s\t1\t4\tPE\tHuman\tdouble\thalf\t%s\t%s\tNA\n&quot;, sample_ids[1], sample_ids[1], $1, infile2}&#39;</span> <span class="kw">|</span> <span class="fu">cat</span> <span class="op">&lt;(</span><span class="ex">curl</span> https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv<span class="op">)</span> - <span class="op">&gt;</span> <span class="va">$BATCH</span>.tsv</span>
+<span id="cb7-37"><a href="#cb7-37"></a></span>
+<span id="cb7-38"><a href="#cb7-38"></a><span class="co"># Use the EAGER launcher to set run parameters and then edit the json file accordingly</span></span>
+<span id="cb7-39"><a href="#cb7-39"></a><span class="fu">sed</span> -r <span class="st">&quot;s/: </span><span class="dt">\&quot;</span><span class="st">.+\.tsv</span><span class="dt">\&quot;</span><span class="st">/: </span><span class="dt">\&quot;</span><span class="va">$BATCH</span><span class="st">.tsv</span><span class="dt">\&quot;</span><span class="st">/&quot;</span> <span class="va">$WORK_DIR</span>/WWR_aDNA_NF_default.json <span class="op">&gt;</span> <span class="va">$BATCH</span>.<span class="va">$REF</span>.<span class="va">$ALIGNER</span>.<span class="va">$GENOTYPER</span>.json</span>
+<span id="cb7-40"><a href="#cb7-40"></a><span class="co"># or in subsequent runs when the bam files already exist</span></span>
+<span id="cb7-41"><a href="#cb7-41"></a><span class="co"># sed -r &quot;s/: \&quot;.+\.tsv\&quot;/: \&quot;$BATCH.tsv\&quot;/&quot; ../Dingo_aDNA_NF_reuseBAM.json &gt; $BATCH.$REF.$ALIGNER.$GENOTYPER.json</span></span>
+<span id="cb7-42"><a href="#cb7-42"></a></span>
+<span id="cb7-43"><a href="#cb7-43"></a><span class="co"># run EAGER with the parameters file and custom profile (qris.config)</span></span>
+<span id="cb7-44"><a href="#cb7-44"></a><span class="ex">nextflow</span> run /home/ibar/.nextflow/assets/nf-core/eager_test/ -params-file <span class="va">$BATCH</span>.<span class="va">$REF</span>.<span class="va">$ALIGNER</span>.<span class="va">$GENOTYPER</span>.json -c /home/ibar/.nextflow/qris.config </span></code></pre></div>
 <div id="refs" class="references hanging-indent">
 <div id="ref-cahillGenomicEvidenceWidespread2018">
 <p>Cahill JA, Heintzman PD, Harris K, et al. (2018) Genomic Evidence of Widespread Admixture from Polar Bears into Brown Bears during the Last Ice Age. Mol Biol Evol 35:1120–1129. doi: <a href="https://doi.org/10.1093/molbev/msy018">10.1093/molbev/msy018</a></p>
+</div>
+<div id="ref-ditommasoNextflowEnablesReproducible2017">
+<p>Di Tommaso P, Chatzou M, Floden EW, et al. (2017) Nextflow enables reproducible computational workflows. Nature Biotechnology 35:316–319. doi: <a href="https://doi.org/10.1038/nbt.3820">10.1038/nbt.3820</a></p>
+</div>
+<div id="ref-garrisonHaplotypebasedVariantDetection2012b">
+<p>Garrison E, Marth G (2012) Haplotype-based variant detection from short-read sequencing. <a href="http://arxiv.org/abs/1207.3907">http://arxiv.org/abs/1207.3907</a>. Cited 12 Jan 2021</p>
+</div>
+<div id="ref-jacksonUsingRapidPrototyping2020">
+<p>Jackson MJ, Wallace E, Kavoussanakis K (2020) Using rapid prototyping to choose a bioinformatics workflow management system. bioRxiv 2020.08.04.236208. doi: <a href="https://doi.org/10.1101/2020.08.04.236208">10.1101/2020.08.04.236208</a></p>
 </div>
 <div id="ref-kawashARIADNAMachineLearning2018">
 <p>Kawash JK, Smith SD, Karaiskos S, Grigoriev A (2018) ARIADNA: Machine learning method for ancient DNA variant discovery. DNA Res 25:619–627. doi: <a href="https://doi.org/10.1093/dnares/dsy029">10.1093/dnares/dsy029</a></p>
@@ -2101,11 +2208,17 @@ To improve performance, temporary files were written to a local <code>scratch</c
 <div id="ref-pruferSnpADAncientDNA2018">
 <p>Prüfer K (2018) snpAD: An ancient DNA genotype caller. Bioinformatics 34:4165–4171. doi: <a href="https://doi.org/10.1093/bioinformatics/bty507">10.1093/bioinformatics/bty507</a></p>
 </div>
-<div id="ref-Ralf_González_Zhong_Kayser_2018">
-<p>Ralf A, González DM, Zhong K, Kayser M (2018) Yleaf: Software for human y-chromosomal haplogroup inference from next-generation sequencing data. Molecular Biology and Evolution 35:1820–1820. doi: <a href="https://doi.org/10.1093/molbev/msy080">10.1093/molbev/msy080</a></p>
+<div id="ref-ralfYleafSoftwareHuman2018">
+<p>Ralf A, González DM, Zhong K, Kayser M (2018) Yleaf: Software for Human Y-Chromosomal Haplogroup Inference from Next-Generation Sequencing Data. Mol Biol Evol 35:1820–1820. doi: <a href="https://doi.org/10.1093/molbev/msy080">10.1093/molbev/msy080</a></p>
+</div>
+<div id="ref-ruden_using_2012">
+<p>Ruden DM, Cingolani P, Patel VM, et al. (2012) Using <em>Drosophila</em> <em>Melanogaster</em> as a model for genotoxic chemical mutational studies with a new program, SnpSift. toxicogenomics 3:35. doi: <a href="https://doi.org/10.3389/fgene.2012.00035">10.3389/fgene.2012.00035</a></p>
 </div>
 <div id="ref-tischlerBiobambamToolsRead2014">
 <p>Tischler G, Leonard S (2014) Biobambam: Tools for read pair collation based algorithms on BAM files. Source Code for Biology and Medicine 9:13. doi: <a href="https://doi.org/10.1186/1751-0473-9-13">10.1186/1751-0473-9-13</a></p>
+</div>
+<div id="ref-yatesReproduciblePortableEfficient2020">
+<p>Yates JAF, Lamnidis TC, Borry M, et al. (2020) Reproducible, portable, and efficient ancient genome reconstruction with nf-core/eager. bioRxiv 2020.06.11.145615. doi: <a href="https://doi.org/10.1101/2020.06.11.145615">10.1101/2020.06.11.145615</a></p>
 </div>
 <div id="ref-zhouAntCallerAccurateVariant2017">
 <p>Zhou B, Wen S, Wang L, et al. (2017) AntCaller: An accurate variant caller incorporating ancient DNA damage. Mol Genet Genomics 292:1419–1430. doi: <a href="https://doi.org/10.1007/s00438-017-1358-5">10.1007/s00438-017-1358-5</a></p>

@@ -1,5 +1,103 @@
- @article{Ralf_González_Zhong_Kayser_2018, title={Yleaf: Software for Human Y-Chromosomal Haplogroup Inference from Next-Generation Sequencing Data}, volume={35}, ISSN={0737-4038}, DOI={10.1093/molbev/msy080}, abstractNote={Molecular Biology and Evolution, msy032, https://doi.org/10.1093/molbev/msy032}, number={7}, journal={Molecular Biology and Evolution}, publisher={Oxford Academic}, author={Ralf, Arwin and González, Diego Montiel and Zhong, Kaiyin and Kayser, Manfred}, year={2018}, month={Jul}, pages={1820–1820} }
 
+@article{ralfYleafSoftwareHuman2018,
+  title = {Yleaf: {{Software}} for {{Human Y}}-{{Chromosomal Haplogroup Inference}} from {{Next}}-{{Generation Sequencing Data}}},
+  shorttitle = {Yleaf},
+  author = {Ralf, Arwin and González, Diego Montiel and Zhong, Kaiyin and Kayser, Manfred},
+  date = {2018-07-01},
+  journaltitle = {Molecular Biology and Evolution},
+  shortjournal = {Mol Biol Evol},
+  volume = {35},
+  pages = {1820--1820},
+  publisher = {{Oxford Academic}},
+  issn = {0737-4038},
+  doi = {10.1093/molbev/msy080},
+  url = {https://academic.oup.com/mbe/article/35/7/1820/4993044},
+  urldate = {2020-12-03},
+  abstract = {Molecular Biology and Evolution, msy032, https://doi.org/10.1093/molbev/msy032},
+  langid = {english},
+  number = {7}
+}
+
+
+
+
+@online{garrisonHaplotypebasedVariantDetection2012b,
+  title = {Haplotype-Based Variant Detection from Short-Read Sequencing},
+  author = {Garrison, Erik and Marth, Gabor},
+  date = {2012-07-20},
+  url = {http://arxiv.org/abs/1207.3907},
+  urldate = {2021-01-12},
+  abstract = {The direct detection of haplotypes from short-read DNA sequencing data requires changes to existing small-variant detection methods. Here, we develop a Bayesian statistical framework which is capable of modeling multiallelic loci in sets of individuals with non-uniform copy number. We then describe our implementation of this framework in a haplotype-based variant detector, FreeBayes.},
+  archivePrefix = {arXiv},
+  eprint = {1207.3907},
+  eprinttype = {arxiv},
+  keywords = {Quantitative Biology - Genomics,Quantitative Biology - Quantitative Methods},
+  note = {Comment: 9 pages, partial draft},
+  primaryClass = {q-bio}
+}
+
+
+@article{ditommasoNextflowEnablesReproducible2017,
+  title = {Nextflow Enables Reproducible Computational Workflows},
+  author = {Di Tommaso, Paolo and Chatzou, Maria and Floden, Evan W. and Barja, Pablo Prieto and Palumbo, Emilio and Notredame, Cedric},
+  date = {2017-04-11},
+  journaltitle = {Nature Biotechnology},
+  volume = {35},
+  pages = {316--319},
+  issn = {1546-1696},
+  doi = {10.1038/nbt.3820},
+  url = {https://www.nature.com/articles/nbt.3820},
+  urldate = {2018-12-02},
+  abstract = {Nextflow enables reproducible computational workflows},
+  langid = {english}
+}
+
+@article{jacksonUsingRapidPrototyping2020,
+  title = {Using Rapid Prototyping to Choose a Bioinformatics Workflow Management System},
+  author = {Jackson, Michael J. and Wallace, Edward and Kavoussanakis, Kostas},
+  date = {2020-08-05},
+  journaltitle = {bioRxiv},
+  pages = {2020.08.04.236208},
+  publisher = {{Cold Spring Harbor Laboratory}},
+  doi = {10.1101/2020.08.04.236208},
+  url = {https://www.biorxiv.org/content/10.1101/2020.08.04.236208v1},
+  urldate = {2020-10-22},
+  abstract = {{$<$}h3{$>$}Abstract{$<$}/h3{$>$} {$<$}p{$>$}Workflow management systems represent, manage, and execute multi-step computational analyses and offer many benefits to bioinformaticians. They provide a common language for describing analysis workflows, contributing to reproducibility and to building libraries of reusable components. They can support both incremental build and re-entrancy – the ability to selectively re-execute parts of a workflow in the presence of additional inputs or changes in configuration and to resume execution from where a workflow previously stopped. Many workflow management systems enhance portability by supporting the use of containers, high-performance computing systems and clouds. Most importantly, workflow management systems allow bioinformaticians to delegate \emph{how} their workflows are run to the workflow management system and its developers. This frees the bioinformaticians to focus on the content of these workflows, their data analyses, and their science.{$<$}/p{$><$}p{$>$}RiboViz is a package to extract biological insight from ribosome profiling data to help advance understanding of protein synthesis. At the heart of RiboViz is an analysis workflow, implemented in a Python script. To conform to best practices for scientific computing which recommend the use of build tools to automate workflows and to re-use code instead of rewriting it, the authors reimplemented this workflow within a workflow management system. To select a workflow management system, a rapid survey of available systems was undertaken, and candidates were shortlisted: Snakemake, cwltool and Toil (implementations of the Common Workflow Language) and Nextflow. An evaluation of each candidate, via rapid prototyping of a subset of the RiboViz workflow, was performed and Nextflow was chosen. The selection process took 10 person-days, a small cost for the assurance that Nextflow best satisfied the authors’ requirements. This use of rapid prototyping can offer a low-cost way of making a more informed selection of software to use within projects, rather than relying solely upon reviews and recommendations by others.{$<$}/p{$><$}h3{$>$}Author summary{$<$}/h3{$>$} {$<$}p{$>$}Data analysis involves many steps, as data are wrangled, processed, and analysed using a succession of unrelated software packages. Running all the right steps, in the right order, with the right outputs in the right places is a major source of frustration. Workflow management systems require that each data analysis step be “wrapped” in a structured way, describing its inputs, parameters, and outputs. By writing these wrappers the scientist can focus on the meaning of each step, which is the interesting part. The system uses these wrappers to decide what steps to run and how to run these, and takes charge of running the steps, including reporting on errors. This makes it much easier to repeatedly run the analysis and to run it transparently upon different computers. To select a workflow management system, we surveyed available tools and selected three for “rapid prototype” implementations to evaluate their suitability for our project. We advocate this rapid prototyping as a low-cost (both time and effort) way of making an informed selection of a system for use within a project. We conclude that many similar multi-step data analysis workflows can be rewritten in a workflow management system.{$<$}/p{$>$}},
+  langid = {english}
+}
+
+@article{yatesReproduciblePortableEfficient2020,
+  title = {Reproducible, Portable, and Efficient Ancient Genome Reconstruction with Nf-Core/Eager},
+  author = {Yates, James A. Fellows and Lamnidis, Thiseas C. and Borry, Maxime and Valtueña, Aida Andrades and Fagernäs, Zandra and Clayton, Stephen and Garcia, Maxime U. and Neukamm, Judith and Peltzer, Alexander},
+  date = {2020-10-21},
+  journaltitle = {bioRxiv},
+  pages = {2020.06.11.145615},
+  publisher = {{Cold Spring Harbor Laboratory}},
+  doi = {10.1101/2020.06.11.145615},
+  url = {https://www.biorxiv.org/content/10.1101/2020.06.11.145615v2},
+  urldate = {2020-11-23},
+  abstract = {{$<$}h3{$>$}Abstract{$<$}/h3{$>$} {$<$}p{$>$}The broadening utilisation of ancient DNA to address archaeological, palaeontological, and biological questions is resulting in a rising diversity in the size of laboratories and scale of analyses being performed. In the context of this heterogeneous landscape, we present nf-core/eager, an advanced and entirely redesigned and extended version of the EAGER pipeline for the analysis of ancient genomic data. This Nextflow pipeline aims to address three main themes: accessibility and adaptability to different computing configurations, reproducibility to ensure robust analytical standards, and updating the pipeline to the latest routine ancient genomic practises. This new version of EAGER has been developed within the nf-core initiative to ensure high-quality software development and maintenance support; contributing to a long-term lifecycle for the pipeline. nf-core/eager will assist in ensuring that ancient DNA sequencing data can be used by a diverse range of research groups and fields.{$<$}/p{$>$}},
+  langid = {english}
+}
+
+
+@article{langmeadFastGappedreadAlignment2012,
+  title = {Fast gapped-read alignment with Bowtie 2},
+  author = {Langmead, Ben and Salzberg, Steven L.},
+  date = {2012-04},
+  journaltitle = {Nature Methods},
+  shortjournal = {Nat Meth},
+  volume = {9},
+  pages = {357-359},
+  issn = {1548-7091},
+  doi = {10.1038/nmeth.1923},
+  url = {http://www.nature.com/nmeth/journal/v9/n4/abs/nmeth.1923.html},
+  urldate = {2016-05-23},
+  abstract = {As the rate of sequencing increases, greater throughput is demanded from read aligners. The full-text minute index is often used to make alignment very fast and memory-efficient, but the approach is ill-suited to finding longer, gapped alignments. Bowtie 2 combines the strengths of the full-text minute index with the flexibility and speed of hardware-accelerated dynamic programming algorithms to achieve a combination of high speed, sensitivity and accuracy.},
+  keywords = {Bioinformatics,Genomics,sequencing},
+  langid = {english},
+  number = {4}
+}
 
 @article{sadedinBazamRapidMethod2019a,
   title = {Bazam: A Rapid Method for Read Extraction and Realignment of High-Throughput Sequencing Data},
@@ -33,25 +131,6 @@
   urldate = {2020-11-25},
   abstract = {Sequence alignment data is often ordered by coordinate (id of the reference sequence plus position on the sequence where the fragment was mapped) when stored in BAM files, as this simplifies the extraction of variants between the mapped data and the reference or of variants within the mapped data. In this order paired reads are usually separated in the file, which complicates some other applications like duplicate marking or conversion to the FastQ format which require to access the full information of the pairs.},
   number = {1}
-}
-
-
-@article{langmeadFastGappedreadAlignment2012,
-  title = {Fast gapped-read alignment with Bowtie 2},
-  author = {Langmead, Ben and Salzberg, Steven L.},
-  date = {2012-04},
-  journaltitle = {Nature Methods},
-  shortjournal = {Nat Meth},
-  volume = {9},
-  pages = {357-359},
-  issn = {1548-7091},
-  doi = {10.1038/nmeth.1923},
-  url = {http://www.nature.com/nmeth/journal/v9/n4/abs/nmeth.1923.html},
-  urldate = {2016-05-23},
-  abstract = {As the rate of sequencing increases, greater throughput is demanded from read aligners. The full-text minute index is often used to make alignment very fast and memory-efficient, but the approach is ill-suited to finding longer, gapped alignments. Bowtie 2 combines the strengths of the full-text minute index with the flexibility and speed of hardware-accelerated dynamic programming algorithms to achieve a combination of high speed, sensitivity and accuracy.},
-  keywords = {Bioinformatics,Genomics,sequencing},
-  langid = {english},
-  number = {4}
 }
 
 

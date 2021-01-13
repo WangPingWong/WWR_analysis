@@ -120,7 +120,8 @@ Download raw `.fastq.gz` files from NECTAR server and genome reference files fro
 _Make sure that the assembly (`.fna`) and annotation (`.gff`) files match the same assembly_
 
 ```{bash retrieve_files}
-mkdir -p ~/aDNA/Human/reference_genomes  && cd ~/aDNA/Human/reference_genomes # on new GU HPC (shared aDNA folder)
+REF_DIR=$HOME/aDNA/Human/reference_genomes
+mkdir -p $REF_DIR  && cd $REF_DIR # on new GU HPC (shared aDNA folder)
 
 # download from ENSEMBL (GRCh38.p13)
 wget ftp://ftp.ensembl.org/pub/release-101/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
@@ -132,7 +133,7 @@ wget ftp://ftp.ensembl.org/pub/release-101/gff3/homo_sapiens/Homo_sapiens.GRCh38
 The quality-trimmed reads were mapped to the Human reference genome, [GRCh38.p13](https://asia.ensembl.org/Homo_sapiens/Info/Index) using `r fontFmt("Bowtie 2")` v2.3.5.1, while adding Read Group information [@langmeadFastGappedreadAlignment2012]. `r fontFmt("Bowtie 2")` was run with custom parameteres for alignment of ancient DNA reads: local mode (`--local`), allowing a single mismatch in the mapping seed (`-N 1`) and a maximum mismatch penalty of 4 (`--mp 4`) [@cahillGenomicEvidenceWidespread2018]. The resulting alignments were processed to mark duplicate reads with `bamsormadup` from `r fontFmt("biobambam2")` [@tischlerBiobambamToolsRead2014].  
 To improve performance, temporary files were written to a local  `scratch` folder on the computing node. Mapping statistics (rate, quality and coverage) were evaluated with `r fontFmt("Qualimap 2")` v.2.2.2-dev [@okonechnikov_qualimap_2016].
 
-Y-chromosome haplogroup was predicted from the alignment files using [Yleaf](https://github.com/genid/Yleaf) v2.2, using default parameters [@Ralf_González_Zhong_Kayser_2018].
+Y-chromosome haplogroup was predicted from the alignment files using [Yleaf](https://github.com/genid/Yleaf) v2.2, using default parameters [@ralfYleafSoftwareHuman2018].
 
 
 ```{bash aDNA_bt2}
@@ -302,46 +303,30 @@ GENOVCF_ID=$( qsub -J1-$(cat GenotypeGVCFs_${BATCH}.bash | wc -l) -l select=1:nc
 grep "Traversal complete" *.e$GENOVCF_ID*
 
 # combine all into one file!! (need to have vcftools installed in environment)
-vcf-concat ${BATCH}.${ALIGNER}.${REF}*vcf.gz > ${BATCH}.${ALIGNER}.${REF}.vcf
+vcf-concat ${BATCH}.${ALIGNER}.${REF}*vcf.gz | bgzip > ${BATCH}.${ALIGNER}.${REF}.vcf.gz
+# index that file
+bcftools index ${BATCH}.${ALIGNER}.${REF}.vcf.gz
 
-
-#DBIMPORT_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; export TILEDB_DISABLE_FILE_LOCKING=1; gatk GenomicsDBImport --java-options \"-Xmx8g -Xms8g\" $GVCF_FILES --genomicsdb-workspace-path ${BATCH}_GenomicsDB --tmp-dir $TMP_DIR -L ${REF}_intervals.list " | qsub -V -l select=1:ncpus=4:mem=16GB,walltime=10:00:00 -N gatk_dbimport -W depend=afterok:$GATK_ID[] | egrep -o "^[0-9]+")
-
-# call variants
-#GENOVCF_ID=$(echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \"-Xmx4g\" -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB  -new-qual -O UWW1.all.${ALIGNER}.${REF}.vcf"  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeGVCFs -W depend=afterok:$DBIMPORT_ID | egrep -o "^[0-9]+")
-
-# call variants from just MT 
-GENOVCFMT_ID=$(echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \"-Xmx4g\" -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB -L MT -new-qual -O ${BATCH}.all.${ALIGNER}.${REF}.MT.vcf"  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeMT -W depend=afterok:$DBIMPORT_ID | egrep -o "^[0-9]+")
+# call variants from just MT (not needed if we have the entire VCF)
+# GENOVCFMT_ID=$(echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \"-Xmx4g\" -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB -L MT -new-qual -O ${BATCH}.all.${ALIGNER}.${REF}.MT.vcf"  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeMT -W depend=afterok:$DBIMPORT_ID | egrep -o "^[0-9]+")
 
     
 # VariantFiltration
-gatk VariantFiltration -R $GENOME.fasta -V myfile_HC.vcf --filter-expression "DP<5" --filter-name "DP" -O myfile_HC_VF.vcf
+conda activate $CONDA_NAME
+# filter with SnpSift to make sure that all genotypes have DP>5
+zcat ${BATCH}.${ALIGNER}.${REF}.vcf.gz | SnpSift filter "( GEN[?].DP > 4 )" | pigz -c > ${BATCH}.${ALIGNER}.${REF}.DP5.vcf.gz
+
+# Add genotype quality to the filter
+zcat ${BATCH}.${ALIGNER}.${REF}.vcf.gz | SnpSift filter "( ! GEN[*].DP < 5 ) & ( ! GEN[*].GQ < 30 )" | pigz -c > ${BATCH}.${ALIGNER}.${REF}.DP5.vcf.gz
+
+#gatk VariantFiltration -R $GENOME.fasta -V myfile_HC.vcf --filter-expression "DP<5" --filter-name "DP" -O myfile_HC_VF.vcf
 
 #FINAL_MERGE=$( echo "cd $( pwd ) ; picard MergeSamFiles USE_THREADING=true SO=coordinate $BAMS O=all.csorted.combined.bam" | qsub -V -l select=1:ncpus=${NCORES}:mem=96GB,walltime=5:00:00 -N Final_merge ) # 5248672.pbsserver
 # FINAL_MERGE_ID=$( echo $FINAL_MERGE | grep -P -o '[\d\.]+(?!\.\w)' | sed 's/\.$//')
 
 # save read groups to file (useful for vcf later on)
 
-# Extract mitocondrial sequences
-samtools faidx $GENOME.fasta
-grep "chromosome X" $GENOME.fasta | sed 's/>//' > $REF.chrX
-# gawk '{sub(">",  "", $1); print $1}' 
-# commands to extract the consensus sequence for each mitochondrial (Chr X)contig
 
-MT_CONSENS_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; parallel --dry-run 'samtools faidx -r Cooinda.chrX $GENOME.fasta | bcftools consensus -H 1pIu -s {} ${BATCH}.${ALIGNER}.${REF}.norm.vcf.gz > {}.chrX.fa' ::: \$(gawk -F ["\t":] '{print \$3}'  ${BATCH}.${ALIGNER}.${REF}.all.read_groups.txt) " | qsub -V -l select=1:ncpus=${NCORES}:mem=8GB,walltime=1:00:00 -N chrX_consensus -W depend=afterok:$CALL_VARS_ID | egrep -o "^[0-9]+")
-# extract all reads mapping to Chr X
-parallel --dry-run "samtools faidx -r Cooinda.chrX $GENOME.fasta | bcftools consensus -H 1pIu -s {} ${BATCH.${ALIGNER}.${REF}.norm.vcf.gz > ${BATCH}.${ALIGNER}.${REF}.{}.chrX.fa" ::: $(gawk -F ["\t":] '{print $3}'  ${BATCH}.${ALIGNER}.${REF}.all.read_groups.txt) > extract_chrX.cmds
-#parallel --dry-run "bcftools mpileup --threads \$NCPUS -f $GENOME.fasta -r {1} {2} | bcftools call  --threads \$NCPUS -c | vcfutils.pl vcf2fq >> {2.}.chrX.fq" ::: $( cat $REF.chrX )  ::: *.bam > extract_chrX.cmds
-# create a pbs file
-sed -E 's/mem=[0-9]+GB,walltime=[0-9]+:00:00/mem=4GB,walltime=0:30:00/'   ${RUN}.pbspro > extract_chrX.pbspro
-# run jobs as an array
-MT_CONSENS_ID=$( qsub -J1-$( cat extract_chrX.cmds | wc -l ) -N chrX_consensus  -vCMDS_FILE=extract_chrX.cmds -W depend=afterok:$CALL_VARS_ID extract_chrX.pbspro | egrep -o "^[0-9]+") 
-echo "Finished extracting consensus sequence job array" | qsub -l select=1:ncpus=1:mem=4MB,walltime=00:01:00 -N cons_finish -m e -M i.bar@griffith.edu.au -W depend=afterok:$MT_CONSENS_ID[]
-# transfer the sequences to CloudStor
-conda activate base
-rclone copy -L -P `pwd`/ChrX_consensus_seqs CloudStor:Shared/GRIFFITH-Ford-Crop-Genetics-Lab/Dingo/ChrX_consensus_seqs
-# run jobs in a single node
-# CHRX_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; cat extract_chrX.cmds | parallel"  | qsub -l select=1:ncpus=${NCORES}:mem=32GB,walltime=3:00:00 -N extract_chrX | egrep -o "^[0-9]+") 
 
 # find and remove empty files
 find . -size 0 -exec rm {} + 
@@ -374,6 +359,132 @@ echo "##########################################################################
 ```
 
 
-
 #### Call Variants
-After alignment, variants were called from the aligned read files with either `mpileup` (from `r fontFmt("samtools/bcftools/sambamba")`), GATK or FreeBayes or aDNA-specific tools, such as [`r fontFmt("pileupCaller")`](https://github.com/stschiff/sequenceTools), `r fontFmt("ARIADNA")` [@kawashARIADNAMachineLearning2018], `r fontFmt("AntCaller")` [@zhouAntCallerAccurateVariant2017] or `r fontFmt("snpAD")` [@pruferSnpADAncientDNA2018].  
+After alignment, variants were called from the aligned read files with either `mpileup` (from `r fontFmt("samtools/bcftools/sambamba")`), GATK (UnifiedGenotyper or HaplotypeCaller), FreeBayes[@garrisonHaplotypebasedVariantDetection2012b]; or aDNA-specific tools, such as [`r fontFmt("pileupCaller")`](https://github.com/stschiff/sequenceTools), `r fontFmt("ARIADNA")` [@kawashARIADNAMachineLearning2018], `r fontFmt("AntCaller")` [@zhouAntCallerAccurateVariant2017] or `r fontFmt("snpAD")` [@pruferSnpADAncientDNA2018].  
+
+
+#### Pipeline execution with Nextflow/EAGER 
+The entire analysis workflow can be automated and run with `r fontFmt("EAGER")` (v2.2.2), which was developed specifically for processing of aDNA samples and includes all the tools and approaches mentioned above (and more) [@yatesReproduciblePortableEfficient2020]. `r fontFmt("EAGER")` is implemented through `r fontFmt("Nextflow")` (v20.10.0), a bioinformatics workflow management system [@ditommasoNextflowEnablesReproducible2017; @jacksonUsingRapidPrototyping2020].  
+
+The pipeline parameters were set using the `r fontFmt("EAGER")` [Launcher web app](https://nf-co.re/launch?pipeline=eager&release=2.2.2) and saved to `params.json` file that was used as input for the run. Read files details were provided in the `WWR_samples.tsv` file.
+
+_Since `nextflow` is not yet installed on Griffith HPC systems, this analysis was run at the QRIS Awoonga HPC_
+
+```{bash nextflow}
+conda install -n base nextflow nf-core
+DATE=`date +%d_%m_%Y`
+BATCH=WWR_NF1
+ALIGNER=bt2-local # bwamem # bt2-local-N1  bwaaln 
+GENOTYPER=gatkhc # pileupcaller
+RUN="${BATCH}_process_${DATE}" # day of run was 02_02_2019
+WORK_DIR=/30days/ibar/data/Human/WWR
+# Create tmp folder
+TMP_DIR=$HOME/30days/tmp && mkdir -p $TMP_DIR # on Awoonga
+# setup environment variable to run singularity and nextflow
+printf 'export SINGULARITY_CACHEDIR=/30days/ibar/.singularity\nexport SREGISTRY_DATABASE=$SINGULARITY_CACHEDIR\nexport NXF_SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR\nexport NXF_CONDA_CACHEDIR=/30days/ibar/.conda\nexport NXF_OPTS="-Xms1g -Xmx4g"' >> ~/.bashcr
+source ~/.bashrc
+mkdir -p $SINGULARITY_CACHEDIR $NXF_CONDA_CACHEDIR
+
+REF_DIR="/30days/ibar/data/Human/reference_genome"
+REF="GRCh38"
+[ ! -s "$REF_DIR/$REF.fasta" ] && pigz -cd $(find $REF_DIR -name "*$REF*.f*a.gz") > $REF_DIR/$REF.fasta
+[ ! -s "$REF_DIR/$REF.gff" ] && pigz -cd $(find $REF_DIR -name "*$REF*.gff*.gz") > $REF_DIR/$REF.gff
+#cat $REF_DIR/Dingo_MT_MH035676.1.fasta >> $REF_DIR/$REF.fasta
+
+GENOME="$REF_DIR/$REF"
+FQ_DIR=${WORK_DIR}/fastq_files
+# copy input files from CloudStor
+# ln -s ~/30days/data ~/aDNA # on Awoonga
+# mkdir -p $FQ_DIR && cd $FQ_DIR
+rclone copy -P CloudStor:aDNA/Human/WWR/fastq_files $FQ_DIR
+
+# create working folder for the run
+mkdir -p ${WORK_DIR}/${RUN} # on Awoonga
+cd !$
+
+# create sample table
+# wget https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv
+find $FQ_DIR -maxdepth 1 -name "UWW1*_1*.f*q.gz" | sort | gawk '{n=split($1,a,"/"); infile2=gensub("_1\\.", "_2.", "1", $1); match(a[n], /(.+)_1\..*f.*q.gz/, sample_ids); printf "%s\t%s\t1\t4\tPE\tHuman\tdouble\thalf\t%s\t%s\tNA\n", sample_ids[1], sample_ids[1], $1, infile2}' | cat <(curl https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv) - > $BATCH.tsv
+
+# Use the EAGER launcher to set run parameters and then edit the json file accordingly
+sed -r "s/: \".+\.tsv\"/: \"$BATCH.tsv\"/" $WORK_DIR/WWR_aDNA_NF_default.json > $BATCH.$REF.$ALIGNER.$GENOTYPER.json
+# or in subsequent runs when the bam files already exist
+# sed -r "s/: \".+\.tsv\"/: \"$BATCH.tsv\"/" ../Dingo_aDNA_NF_reuseBAM.json > $BATCH.$REF.$ALIGNER.$GENOTYPER.json
+
+# run EAGER with the parameters file and custom profile (qris.config)
+nextflow run /home/ibar/.nextflow/assets/nf-core/eager_test/ -params-file $BATCH.$REF.$ALIGNER.$GENOTYPER.json -c /home/ibar/.nextflow/qris.config
+
+```
+
+#### Variant filtration and analysis
+
+##### Individual samples
+Use the `vcf` file that was produced using the samples separately to determine the error rate and confirm that there are no contaminations and that they indeed originate from the same individual. To do that, we will filter the SNPs to include only ones that are present in all samples (`DP>5`), then calculate error rate. In addition, combine with external data (a subset of the 2,500 genomes SNPs) and calculate genetic distance and PCA.
+
+Filtering criteria:
+1. Genotype `DP>5`  
+2. Genotype present in all samples  
+3. Genotype is a SNP and not indel    
+4. Genotype is not "weird" (`1|1:0,5:5:15:1|1:10507968_A_G:225,15,0:10507968`) - use `( ! exists GEN[?].PGT)`
+
+Filtering was performed with a combination of SnpSift v4.3t [@ruden_using_2012] and gawk.
+
+```{bash variant_filering}
+# VariantFiltration 
+# this analysis on Griffith HPC
+zcat ${BATCH}.${ALIGNER}.${REF}.vcf.gz | SnpSift filter "( GEN[?].DP > 5 ) & ( GEN[?].GT != './.' )" | gawk '{if ($0 ~ /^#/ || (length($4)==1 && length($5)==1))print}' | pigz -c > ${BATCH}.${ALIGNER}.${REF}.DP5.GT.snps.vcf.gz
+# check how many variants left
+zcat ${BATCH}.${ALIGNER}.${REF}.DP5.GT.snps.vcf.gz | grep -c -v "^##" # 1795
+```
+
+
+#### Combined samples
+Once the samples were confirmed to be of the same individual and no contaminations, we can combine the raw sequencing data and run the pipeline as a single sample.
+
+```{bash eager_combined}
+conda install -n base nextflow nf-core
+DATE=`date +%d_%m_%Y`
+BATCH=WWR_NF_combined
+ALIGNER=bt2-local # bt2-local-N1  bwaaln  bwamem
+GENOTYPER=gatkhc # gatkug  freebayes
+RUN="${BATCH}_process_${DATE}" # day of run was 02_02_2019
+WORK_DIR=/30days/ibar/data/Human/WWR
+# Create tmp folder
+TMP_DIR=$HOME/30days/tmp && mkdir -p $TMP_DIR # on Awoonga
+# setup environment variable to run singularity and nextflow
+printf 'export SINGULARITY_CACHEDIR=/30days/ibar/.singularity\nexport SREGISTRY_DATABASE=$SINGULARITY_CACHEDIR\nexport NXF_SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR\nexport NXF_CONDA_CACHEDIR=/30days/ibar/.conda\nexport NXF_OPTS="-Xms1g -Xmx4g"' >> ~/.bashcr
+source ~/.bashrc
+mkdir -p $SINGULARITY_CACHEDIR $NXF_CONDA_CACHEDIR
+
+REF_DIR="/30days/ibar/data/Human/reference_genomes"
+REF="GRCh38"
+[ ! -s "$REF_DIR/$REF.fasta" ] && pigz -cd $(find $REF_DIR -iname "*$REF*.f*a.gz") > $REF_DIR/$REF.fasta
+[ ! -s "$REF_DIR/$REF.gff" ] && pigz -cd $(find $REF_DIR -iname "*$REF*.gff*.gz") > $REF_DIR/$REF.gff
+#cat $REF_DIR/Dingo_MT_MH035676.1.fasta >> $REF_DIR/$REF.fasta
+
+GENOME="$REF_DIR/$REF"
+FQ_DIR=${WORK_DIR}/fastq_files
+cat $FQ_DIR/UWW1_*_1.fastq.gz > $FQ_DIR/combined_WWR_1.fastq.gz
+cat $FQ_DIR/UWW1_*_2.fastq.gz > $FQ_DIR/combined_WWR_2.fastq.gz
+# copy input files from CloudStor
+# ln -s ~/30days/data ~/aDNA # on Awoonga
+# mkdir -p $FQ_DIR && cd $FQ_DIR
+rclone copy -P CloudStor:aDNA/Human/WWR/fastq_files $FQ_DIR
+
+# create working folder for the run
+mkdir -p ${WORK_DIR}/${RUN} # on Awoonga
+cd !$
+
+# create sample table
+# wget https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv
+find $FQ_DIR -maxdepth 1 -name "combined*_1*.f*q.gz" | sort | gawk '{n=split($1,a,"/"); infile2=gensub("_1\\.", "_2.", "1", $1); match(a[n], /(.+)_1\..*f.*q.gz/, sample_ids); printf "%s\t%s\t1\t4\tPE\tHuman\tdouble\thalf\t%s\t%s\tNA\n", sample_ids[1], sample_ids[1], $1, infile2}' | cat <(curl https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv) - > $BATCH.tsv
+
+# Use the EAGER launcher to set run parameters and then edit the json file accordingly
+sed -r "s/: \".+\.tsv\"/: \"$BATCH.tsv\"/" $WORK_DIR/WWR_aDNA_NF_default.json > $BATCH.$REF.$ALIGNER.$GENOTYPER.json
+# or in subsequent runs when the bam files already exist
+# sed -r "s/: \".+\.tsv\"/: \"$BATCH.tsv\"/" ../Dingo_aDNA_NF_reuseBAM.json > $BATCH.$REF.$ALIGNER.$GENOTYPER.json
+
+# run EAGER with the parameters file and custom profile (qris.config)
+nextflow run /home/ibar/.nextflow/assets/nf-core/eager_test/ -params-file $BATCH.$REF.$ALIGNER.$GENOTYPER.json -c /home/ibar/.nextflow/qris.config 
+
+```
