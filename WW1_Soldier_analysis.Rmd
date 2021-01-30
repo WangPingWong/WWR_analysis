@@ -112,11 +112,7 @@ conda clean -y --all
 
 ### Running the Analysis Pipeline
 #### Downloading reference genome files
-Download raw `.fastq.gz` files from NECTAR server and genome reference files from NCBI:
-1. Dingo (Sandy) - [GCF_003254725.2](https://www.ncbi.nlm.nih.gov/assembly/GCF_003254725.2)  
-2. Dingo (Cooinda) - [GCF_012295265.1](https://www.ncbi.nlm.nih.gov/assembly/GCF_012295265.1/)  
-3. Dingo mitochondrion genome [MH035676.1](https://www.ncbi.nlm.nih.gov/nucleotide/MH035676.1)  
-4. Dog CanFam3.1 [GCF_000002285.3](https://www.ncbi.nlm.nih.gov/assembly/GCF_000002285.3/)
+Download raw `.fastq.gz` files from NECTAR server and human genome reference (GRCh38) files from NCBI.
 _Make sure that the assembly (`.fna`) and annotation (`.gff`) files match the same assembly_
 
 ```{bash retrieve_files}
@@ -131,7 +127,7 @@ wget ftp://ftp.ensembl.org/pub/release-101/gff3/homo_sapiens/Homo_sapiens.GRCh38
 
 #### Mapping to the reference genome 
 The quality-trimmed reads were mapped to the Human reference genome, [GRCh38.p13](https://asia.ensembl.org/Homo_sapiens/Info/Index) using `r fontFmt("Bowtie 2")` v2.3.5.1, while adding Read Group information [@langmeadFastGappedreadAlignment2012]. `r fontFmt("Bowtie 2")` was run with custom parameteres for alignment of ancient DNA reads: local mode (`--local`), allowing a single mismatch in the mapping seed (`-N 1`) and a maximum mismatch penalty of 4 (`--mp 4`) [@cahillGenomicEvidenceWidespread2018]. The resulting alignments were processed to mark duplicate reads with `bamsormadup` from `r fontFmt("biobambam2")` [@tischlerBiobambamToolsRead2014].  
-To improve performance, temporary files were written to a local  `scratch` folder on the computing node. Mapping statistics (rate, quality and coverage) were evaluated with `r fontFmt("Qualimap 2")` v.2.2.2-dev [@okonechnikov_qualimap_2016].
+To improve performance, temporary files were written to a local `scratch` folder on the computing node. Mapping statistics (rate, quality and coverage) were evaluated with `r fontFmt("Qualimap 2")` v.2.2.2-dev [@okonechnikov_qualimap_2016].
 
 Y-chromosome haplogroup was predicted from the alignment files using [Yleaf](https://github.com/genid/Yleaf) v2.2, using default parameters [@ralfYleafSoftwareHuman2018].
 
@@ -310,6 +306,10 @@ bcftools index ${BATCH}.${ALIGNER}.${REF}.vcf.gz
 # call variants from just MT (not needed if we have the entire VCF)
 # GENOVCFMT_ID=$(echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; gatk GenotypeGVCFs --java-options \"-Xmx4g\" -R $GENOME.fasta -V gendb://${BATCH}_GenomicsDB -L MT -new-qual -O ${BATCH}.all.${ALIGNER}.${REF}.MT.vcf"  | qsub -V -l select=1:ncpus=4:mem=4GB,walltime=100:00:00 -N GenotypeMT -W depend=afterok:$DBIMPORT_ID | egrep -o "^[0-9]+")
 
+# Extract mitocondrial sequences
+samtools faidx $GENOME.fasta
+# commands to extract the consensus sequence for each mitochondrial (MT) contig
+parallel "samtools faidx $GENOME.fasta MT | bcftools consensus -H 1pIu -s {} ${BATCH}.${ALIGNER}.${REF}.vcf.gz > {}.chrMT.fa" ::: \$(zcat ${BATCH}.${ALIGNER}.${REF}.vcf.gz | head -n 2000 | grep '#CHROM' | cut -f 10-) 
     
 # VariantFiltration
 conda activate $CONDA_NAME
@@ -327,6 +327,22 @@ zcat ${BATCH}.${ALIGNER}.${REF}.vcf.gz | SnpSift filter "( ! GEN[*].DP < 5 ) & (
 # save read groups to file (useful for vcf later on)
 
 
+
+MT_CONSENS_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; parallel 'samtools faidx $GENOME.fasta MT | bcftools consensus -H 1pIu -s {} ${BATCH}.${ALIGNER}.${REF}.vcf.gz > {}.chrMT.fa' ::: \$(zcat ${BATCH}.${ALIGNER}.${REF}.vcf.gz | head -n 2000 | grep '#CHROM' | cut -f 10- ) " | qsub -V -l select=1:ncpus=${NCORES}:mem=8GB,walltime=1:00:00 -N MT_consensus -W depend=afterok:$CALL_VARS_ID | egrep -o "^[0-9]+")
+
+# extract all reads mapping to Chr X or Y
+parallel --dry-run "samtools faidx $GENOME.fasta X | bcftools consensus -H 1pIu -s {} ${BATCH.${ALIGNER}.${REF}.norm.vcf.gz > ${BATCH}.${ALIGNER}.${REF}.{}.chrX.fa" ::: $(zcat ${BATCH}.${ALIGNER}.${REF}.vcf.gz | head -n 2000 | grep '#CHROM' | cut -f 10- ) > extract_chrX.cmds
+#parallel --dry-run "bcftools mpileup --threads \$NCPUS -f $GENOME.fasta -r {1} {2} | bcftools call  --threads \$NCPUS -c | vcfutils.pl vcf2fq >> {2.}.chrX.fq" ::: $( cat $REF.chrX )  ::: *.bam > extract_chrX.cmds
+# create a pbs file
+sed -E 's/mem=[0-9]+GB,walltime=[0-9]+:00:00/mem=4GB,walltime=0:30:00/'   ${RUN}.pbspro > extract_chrX.pbspro
+# run jobs as an array
+MT_CONSENS_ID=$( qsub -J1-$( cat extract_chrX.cmds | wc -l ) -N chrX_consensus  -vCMDS_FILE=extract_chrX.cmds -W depend=afterok:$CALL_VARS_ID extract_chrX.pbspro | egrep -o "^[0-9]+") 
+echo "Finished extracting consensus sequence job array" | qsub -l select=1:ncpus=1:mem=4MB,walltime=00:01:00 -N cons_finish -m e -M i.bar@griffith.edu.au -W depend=afterok:$MT_CONSENS_ID[]
+# transfer the sequences to CloudStor
+conda activate base
+rclone copy -L -P `pwd`/ChrX_consensus_seqs CloudStor:Shared/GRIFFITH-Ford-Crop-Genetics-Lab/Dingo/ChrX_consensus_seqs
+# run jobs in a single node
+# CHRX_ID=$( echo "cd $( pwd ) ; source ~/.bashrc; conda activate $CONDA_NAME; cat extract_chrX.cmds | parallel"  | qsub -l select=1:ncpus=${NCORES}:mem=32GB,walltime=3:00:00 -N extract_chrX | egrep -o "^[0-9]+") 
 
 # find and remove empty files
 find . -size 0 -exec rm {} + 
@@ -377,7 +393,7 @@ BATCH=WWR_NF1
 ALIGNER=bt2-local # bwamem # bt2-local-N1  bwaaln 
 GENOTYPER=gatkhc # pileupcaller
 RUN="${BATCH}_process_${DATE}" # day of run was 02_02_2019
-WORK_DIR=/30days/ibar/data/Human/WWR
+WORK_DIR=$HOME/aDNA/Human/WWR
 # Create tmp folder
 TMP_DIR=$HOME/30days/tmp && mkdir -p $TMP_DIR # on Awoonga
 # setup environment variable to run singularity and nextflow
@@ -389,6 +405,7 @@ REF_DIR="/30days/ibar/data/Human/reference_genome"
 REF="GRCh38"
 [ ! -s "$REF_DIR/$REF.fasta" ] && pigz -cd $(find $REF_DIR -name "*$REF*.f*a.gz") > $REF_DIR/$REF.fasta
 [ ! -s "$REF_DIR/$REF.gff" ] && pigz -cd $(find $REF_DIR -name "*$REF*.gff*.gz") > $REF_DIR/$REF.gff
+
 #cat $REF_DIR/Dingo_MT_MH035676.1.fasta >> $REF_DIR/$REF.fasta
 
 GENOME="$REF_DIR/$REF"
@@ -398,11 +415,17 @@ FQ_DIR=${WORK_DIR}/fastq_files
 # mkdir -p $FQ_DIR && cd $FQ_DIR
 rclone copy -P CloudStor:aDNA/Human/WWR/fastq_files $FQ_DIR
 
+# downsample files to test
+mkdir sample5M
+echo "source ~/.bashrc; conda activate aDNA; cd \$PBS_O_WORKDIR ;$(find $FQ_DIR -maxdepth 1 -name "UWW1_*_1.f*q.gz" | parallel --dry-run reformat.sh in='{= s/_1/_#/ =}' out={//}sample5M/'{= s/.+\\//; s/_1.+// =}'_#.sample5M.fq.gz samplereadstarget=5m )
+" | qsub -N downsample -A qris-gu -l select=1:ncpus=8:mem=8GB,walltime=01:00:00
+
 # create working folder for the run
 mkdir -p ${WORK_DIR}/${RUN} # on Awoonga
 cd !$
 
 # create sample table
+
 # wget https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv
 find $FQ_DIR -maxdepth 1 -name "UWW1*_1*.f*q.gz" | sort | gawk '{n=split($1,a,"/"); infile2=gensub("_1\\.", "_2.", "1", $1); match(a[n], /(.+)_1\..*f.*q.gz/, sample_ids); printf "%s\t%s\t1\t4\tPE\tHuman\tdouble\thalf\t%s\t%s\tNA\n", sample_ids[1], sample_ids[1], $1, infile2}' | cat <(curl https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv) - > $BATCH.tsv
 
@@ -412,7 +435,28 @@ sed -r "s/: \".+\.tsv\"/: \"$BATCH.tsv\"/" $WORK_DIR/WWR_aDNA_NF_default.json > 
 # sed -r "s/: \".+\.tsv\"/: \"$BATCH.tsv\"/" ../Dingo_aDNA_NF_reuseBAM.json > $BATCH.$REF.$ALIGNER.$GENOTYPER.json
 
 # run EAGER with the parameters file and custom profile (qris.config)
-nextflow run /home/ibar/.nextflow/assets/nf-core/eager_test/ -params-file $BATCH.$REF.$ALIGNER.$GENOTYPER.json -c /home/ibar/.nextflow/qris.config
+nextflow run nf-core/eager -r 2.3.1 -params-file $BATCH.$REF.$ALIGNER.$GENOTYPER.json -c $HOME/.nextflow/qris.config -profile large_files
+
+# for bowtie2 (to fix RG issue until a patch is provided)
+nextflow run $HOME/.nextflow/assets/nf-core/eager_test/ -with-singularity $NXF_SINGULARITY_CACHEDIR/nfcore-eager-2.2.2.img -params-file $BATCH.$REF.$ALIGNER.$GENOTYPER.json -c $HOME/.nextflow/awoonga.config
+
+# After each job finishes, create a folder to copy the relevant results to CloudStor
+
+mkdir -p $WORK_DIR/CloudStor_copy/$RUN/results
+find $WORK_DIR/$RUN -maxdepth 1 -type f -name "$BATCH*" | parallel ln -sf {} $WORK_DIR/CloudStor_copy/$RUN/
+find $WORK_DIR/$RUN/results/ -maxdepth 1 -type d | egrep "results/multiqc|results/qualimap|results/genotyping" | parallel ln -sf {} $WORK_DIR/CloudStor_copy/$RUN/results/
+
+# check number of SNPs in each sample
+cd CloudStor_copy
+find -L ./ -name *.vcf.gz  | parallel --dry-run "printf \"{}\t%s\t%s\t%s\t%s\n\" \$(zcat {} | grep -v -c '^#') \$(zcat {} | SnpSift filter \"( GEN[?].DP > 5 ) & ( GEN[?].GT != './.' )\" | gawk '{if (\$0 ~ /^#/ || (length(\$4)==1 && length(\$5)==1)); print \$0}' | grep -v -c '^#') \$(zcat {} | SnpSift filter \"( GEN[?].DP > 5 ) & ( GEN[?].GT != './.' ) & ( QUAL > 20 )\" | gawk '{if (\$0 ~ /^#/ || (length(\$4)==1 && length(\$5)==1)); print \$0}' | grep -v -c '^#') \$(zcat {} | SnpSift filter \"( GEN[?].DP > 5 ) & ( GEN[?].GT != './.' ) & ( QUAL > 30 )\" | gawk '{if (\$0 ~ /^#/ || (length(\$4)==1 && length(\$5)==1)); print \$0}' | grep -v -c '^#')" > vcf_stats.cmds
+
+VCF_JOB=$(qsub -J1-$(cat vcf_stats.cmds | wc -l) -N vcf_stats -vCMDS_FILE=vcf_stats.cmds vcf_stats.pbspro | egrep -o "^[0-9]+")
+
+cat <(printf "file\ttotal_snps\tDP_filtered_snps\tQUAL20_filtered_snps\tQUAL30_filtered_snps\n") <(cat vcf_stats.o$VCF_JOB*) > vcf_stats_$DATE.txt
+rm vcf_stats.e$VCF_JOB* vcf_stats.o$VCF_JOB* 
+
+# Finally copy the folder to CloudStor
+rclone sync -P -L $WORK_DIR/CloudStor_copy/$RUN CloudStor:Shared/AncientDNA/Human/WWR/EAGER_results/$RUN
 
 ```
 
@@ -431,6 +475,10 @@ Filtering was performed with a combination of SnpSift v4.3t [@ruden_using_2012] 
 
 ```{bash variant_filering}
 # VariantFiltration 
+# Number of variants from each sample
+SAMPLES=$(zcat WWR.BT2.GRCh38.vcf.gz | head -n 2000 | grep '#CHROM' | cut -f 10-)
+parallel --dry-run  "echo {} \$(zcat ${BATCH}.${ALIGNER}.${REF}.vcf.gz | SnpSift filter \"( GEN[{}].DP > 5 ) & ( GEN[{}].GT != './.' )\" | gawk '{if (\$0 ~ /^#/ || (length(\$4)==1 && length(\$5)==1))print}' | grep -c -v '^##')" ::: $SAMPLES
+
 # this analysis on Griffith HPC
 zcat ${BATCH}.${ALIGNER}.${REF}.vcf.gz | SnpSift filter "( GEN[?].DP > 5 ) & ( GEN[?].GT != './.' )" | gawk '{if ($0 ~ /^#/ || (length($4)==1 && length($5)==1))print}' | pigz -c > ${BATCH}.${ALIGNER}.${REF}.DP5.GT.snps.vcf.gz
 # check how many variants left
@@ -486,5 +534,7 @@ sed -r "s/: \".+\.tsv\"/: \"$BATCH.tsv\"/" $WORK_DIR/WWR_aDNA_NF_default.json > 
 
 # run EAGER with the parameters file and custom profile (qris.config)
 nextflow run /home/ibar/.nextflow/assets/nf-core/eager_test/ -params-file $BATCH.$REF.$ALIGNER.$GENOTYPER.json -c /home/ibar/.nextflow/qris.config 
+# or development version
+nextflow-test run $HOME/etc/tools/nf-core/eager -with-singularity $NXF_SINGULARITY_CACHEDIR/nfcore-eager-2.2.2.img -params-file $BATCH.$REF.$ALIGNER.$GENOTYPER.json -c $HOME/.nextflow/qris.config
 
 ```
