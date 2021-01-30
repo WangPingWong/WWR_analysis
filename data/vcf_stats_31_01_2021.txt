@@ -1,0 +1,11 @@
+file	total_snps	DP_filtered_snps	QUAL20_filtered_snps	QUAL30_filtered_snps
+./WWR_NF1_process_20_01_2021/results/genotyping/UWW1_BP.haplotypecaller.vcf.gz	3792364	6035	391	380
+./WWR_NF2_process_19_01_2021/results/genotyping/UWW1_T.haplotypecaller.vcf.gz	977502	6992	227	216
+./WWR_NF1_process_20_01_2021/results/genotyping/UWW1_B.haplotypecaller.vcf.gz	5984877	8332	481	461
+./WWR_NF1_process_20_01_2021/results/genotyping/UWW1_T.haplotypecaller.vcf.gz	894439	4091	150	133
+./WWR_NF3_process_20_01_2021/results/genotyping/UWW1_BP.haplotypecaller.vcf.gz	4184235	18500	1117	1055
+./WWR_NF3_process_20_01_2021/results/genotyping/UWW1_B.haplotypecaller.vcf.gz	6743593	27071	1453	1359
+./WWR_NF3_process_20_01_2021/results/genotyping/UWW1_T.haplotypecaller.vcf.gz	851600	5346	238	228
+./WWR_NF2_genotyping_process_27_01_2021/results/genotyping/UWW1_B.haplotypecaller.vcf.gz	65933526	6262420	88253	86719
+./WWR_NF2_process_19_01_2021/results/genotyping/UWW1_BP.haplotypecaller.vcf.gz	4478256	15842	833	809
+./WWR_NF2_process_19_01_2021/results/genotyping/UWW1_B.haplotypecaller.vcf.gz	7195008	22023	1064	1029
