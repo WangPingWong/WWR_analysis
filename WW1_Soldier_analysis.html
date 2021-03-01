@@ -1754,7 +1754,7 @@ div.tocify {
 </li>
 <li>Produce variant statistics and assessment<br />
 </li>
-<li>Match SNPs with existing databases</li>
+<li>Match SNPs with existing databases (1000 genome European set)</li>
 </ol>
 <div id="ancient-dna-specific-considerations" class="section level3">
 <h3>Ancient DNA specific considerations</h3>
@@ -1769,7 +1769,9 @@ div.tocify {
 </li>
 <li>Assess DNA damage with MapDamage<br />
 </li>
-<li>Call SNPs from nuclear genome</li>
+<li>Call SNPs from nuclear genome<br />
+</li>
+<li>Create pseudo-haploid representation of the genome?</li>
 </ol>
 </div>
 </div>
@@ -1805,7 +1807,7 @@ Detailed methods, including code for running each of the analyses steps are prov
 <span id="cb2-16"><a href="#cb2-16"></a><span class="ex">conda</span> create -y -n <span class="va">$CONDA_NAME</span></span>
 <span id="cb2-17"><a href="#cb2-17"></a><span class="ex">conda</span> install -y -n <span class="va">$CONDA_NAME</span> blast fastqc multiqc bioawk bbmap bowtie2 bwa bwa-mem2 cutadapt trimmomatic samtools samblaster biobambam sambamba=0.6.6 picard sequencetools mapdamage2 nextflow qualimap mawk p7zip pandas numpy</span>
 <span id="cb2-18"><a href="#cb2-18"></a><span class="co"># create an environment to process and analyse variants</span></span>
-<span id="cb2-19"><a href="#cb2-19"></a><span class="ex">conda</span> create -n snp_tools vcftools bcftools gatk4=4.1.9.0 freebayes snpsift stack plink admixtools admixture structure eigensoft <span class="co"># scikit-learn=0.18.2</span></span>
+<span id="cb2-19"><a href="#cb2-19"></a><span class="ex">conda</span> create -n snp_tools samtools vcftools bcftools gatk4=4.1.9.0 freebayes snpsift stack plink admixtools admixture structure eigensoft vcfanno vt <span class="co"># scikit-learn=0.18.2</span></span>
 <span id="cb2-20"><a href="#cb2-20"></a><span class="co"># conda create -n finestructure finestructure fineradstructure </span></span>
 <span id="cb2-21"><a href="#cb2-21"></a><span class="co"># conda create -n faststructure faststructure</span></span>
 <span id="cb2-22"><a href="#cb2-22"></a><span class="co"># activate environment and cleanup</span></span>
@@ -2185,55 +2187,204 @@ To improve performance, temporary files were written to a local <code>scratch</c
 <span id="cb6-9"><a href="#cb6-9"></a><span class="fu">zcat</span> <span class="va">${BATCH}</span>.<span class="va">${ALIGNER}</span>.<span class="va">${REF}</span>.DP5.GT.snps.vcf.gz <span class="kw">|</span> <span class="fu">grep</span> -c -v <span class="st">&quot;^##&quot;</span> <span class="co"># 1795</span></span></code></pre></div>
 </div>
 </div>
-<div id="combined-samples" class="section level4">
-<h4>Combined samples</h4>
-<p>Once the samples were confirmed to be of the same individual and no contaminations, we can combine the raw sequencing data and run the pipeline as a single sample.</p>
+<div id="combine-samples" class="section level4">
+<h4>Combine samples</h4>
+<p>Once the samples were confirmed to be of the same individual and no contaminations, we can combine data and run the pipeline as a single sample. It is best <strong>NOT</strong> to combine the raw data, but define all relevant samples (in our case Bone and Powdered Bone) as the same <code>Sample_name</code> in the EAGER sample table (leave them as separate libraries) and let EAGER handle the merging of the data (which is done only after each sample was processed, QC-assessed, mapped and dedupped individually)</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1"></a><span class="ex">conda</span> install -n base nextflow nf-core</span>
 <span id="cb7-2"><a href="#cb7-2"></a><span class="va">DATE=</span><span class="kw">`</span><span class="fu">date</span> +%d_%m_%Y<span class="kw">`</span></span>
-<span id="cb7-3"><a href="#cb7-3"></a><span class="va">BATCH=</span>WWR_NF_combined</span>
-<span id="cb7-4"><a href="#cb7-4"></a><span class="va">ALIGNER=</span>bt2-local <span class="co"># bt2-local-N1  bwaaln  bwamem</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a><span class="va">BATCH=</span>WWR_NF2_combined</span>
+<span id="cb7-4"><a href="#cb7-4"></a><span class="va">ALIGNER=</span>bwamem <span class="co"># bt2-local-N1  bwaaln  bwamem</span></span>
 <span id="cb7-5"><a href="#cb7-5"></a><span class="va">GENOTYPER=</span>gatkhc <span class="co"># gatkug  freebayes</span></span>
 <span id="cb7-6"><a href="#cb7-6"></a><span class="va">RUN=</span><span class="st">&quot;</span><span class="va">${BATCH}</span><span class="st">_process_</span><span class="va">${DATE}</span><span class="st">&quot;</span> <span class="co"># day of run was 02_02_2019</span></span>
-<span id="cb7-7"><a href="#cb7-7"></a><span class="va">WORK_DIR=</span>/30days/ibar/data/Human/WWR</span>
-<span id="cb7-8"><a href="#cb7-8"></a><span class="co"># Create tmp folder</span></span>
-<span id="cb7-9"><a href="#cb7-9"></a><span class="va">TMP_DIR=$HOME</span>/30days/tmp <span class="kw">&amp;&amp;</span> <span class="fu">mkdir</span> -p <span class="va">$TMP_DIR</span> <span class="co"># on Awoonga</span></span>
-<span id="cb7-10"><a href="#cb7-10"></a><span class="co"># setup environment variable to run singularity and nextflow</span></span>
-<span id="cb7-11"><a href="#cb7-11"></a><span class="bu">printf</span> <span class="st">&#39;export SINGULARITY_CACHEDIR=/30days/ibar/.singularity\nexport SREGISTRY_DATABASE=$SINGULARITY_CACHEDIR\nexport NXF_SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR\nexport NXF_CONDA_CACHEDIR=/30days/ibar/.conda\nexport NXF_OPTS=&quot;-Xms1g -Xmx4g&quot;&#39;</span> <span class="op">&gt;&gt;</span> ~/.bashcr</span>
-<span id="cb7-12"><a href="#cb7-12"></a><span class="bu">source</span> ~/.bashrc</span>
-<span id="cb7-13"><a href="#cb7-13"></a><span class="fu">mkdir</span> -p <span class="va">$SINGULARITY_CACHEDIR</span> <span class="va">$NXF_CONDA_CACHEDIR</span></span>
-<span id="cb7-14"><a href="#cb7-14"></a></span>
-<span id="cb7-15"><a href="#cb7-15"></a><span class="va">REF_DIR=</span><span class="st">&quot;/30days/ibar/data/Human/reference_genomes&quot;</span></span>
-<span id="cb7-16"><a href="#cb7-16"></a><span class="va">REF=</span><span class="st">&quot;GRCh38&quot;</span></span>
-<span id="cb7-17"><a href="#cb7-17"></a><span class="bu">[</span> <span class="ot">!</span> <span class="ot">-s</span> <span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">.fasta&quot;</span><span class="bu"> ]</span> <span class="kw">&amp;&amp;</span> <span class="ex">pigz</span> -cd <span class="va">$(</span><span class="fu">find</span> <span class="va">$REF_DIR</span> -iname <span class="st">&quot;*</span><span class="va">$REF</span><span class="st">*.f*a.gz&quot;</span><span class="va">)</span> <span class="op">&gt;</span> <span class="va">$REF_DIR</span>/<span class="va">$REF</span>.fasta</span>
-<span id="cb7-18"><a href="#cb7-18"></a><span class="bu">[</span> <span class="ot">!</span> <span class="ot">-s</span> <span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">.gff&quot;</span><span class="bu"> ]</span> <span class="kw">&amp;&amp;</span> <span class="ex">pigz</span> -cd <span class="va">$(</span><span class="fu">find</span> <span class="va">$REF_DIR</span> -iname <span class="st">&quot;*</span><span class="va">$REF</span><span class="st">*.gff*.gz&quot;</span><span class="va">)</span> <span class="op">&gt;</span> <span class="va">$REF_DIR</span>/<span class="va">$REF</span>.gff</span>
-<span id="cb7-19"><a href="#cb7-19"></a><span class="co">#cat $REF_DIR/Dingo_MT_MH035676.1.fasta &gt;&gt; $REF_DIR/$REF.fasta</span></span>
-<span id="cb7-20"><a href="#cb7-20"></a></span>
-<span id="cb7-21"><a href="#cb7-21"></a><span class="va">GENOME=</span><span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">&quot;</span></span>
-<span id="cb7-22"><a href="#cb7-22"></a><span class="va">FQ_DIR=${WORK_DIR}</span>/fastq_files</span>
-<span id="cb7-23"><a href="#cb7-23"></a><span class="fu">cat</span> <span class="va">$FQ_DIR</span>/UWW1_*_1.fastq.gz <span class="op">&gt;</span> <span class="va">$FQ_DIR</span>/combined_WWR_1.fastq.gz</span>
-<span id="cb7-24"><a href="#cb7-24"></a><span class="fu">cat</span> <span class="va">$FQ_DIR</span>/UWW1_*_2.fastq.gz <span class="op">&gt;</span> <span class="va">$FQ_DIR</span>/combined_WWR_2.fastq.gz</span>
-<span id="cb7-25"><a href="#cb7-25"></a><span class="co"># copy input files from CloudStor</span></span>
-<span id="cb7-26"><a href="#cb7-26"></a><span class="co"># ln -s ~/30days/data ~/aDNA # on Awoonga</span></span>
-<span id="cb7-27"><a href="#cb7-27"></a><span class="co"># mkdir -p $FQ_DIR &amp;&amp; cd $FQ_DIR</span></span>
-<span id="cb7-28"><a href="#cb7-28"></a><span class="ex">rclone</span> copy -P CloudStor:aDNA/Human/WWR/fastq_files <span class="va">$FQ_DIR</span></span>
-<span id="cb7-29"><a href="#cb7-29"></a></span>
-<span id="cb7-30"><a href="#cb7-30"></a><span class="co"># create working folder for the run</span></span>
-<span id="cb7-31"><a href="#cb7-31"></a><span class="fu">mkdir</span> -p <span class="va">${WORK_DIR}</span>/<span class="va">${RUN}</span> <span class="co"># on Awoonga</span></span>
-<span id="cb7-32"><a href="#cb7-32"></a><span class="bu">cd</span> !$</span>
-<span id="cb7-33"><a href="#cb7-33"></a></span>
-<span id="cb7-34"><a href="#cb7-34"></a><span class="co"># create sample table</span></span>
-<span id="cb7-35"><a href="#cb7-35"></a><span class="co"># wget https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv</span></span>
-<span id="cb7-36"><a href="#cb7-36"></a><span class="fu">find</span> <span class="va">$FQ_DIR</span> -maxdepth 1 -name <span class="st">&quot;combined*_1*.f*q.gz&quot;</span> <span class="kw">|</span> <span class="fu">sort</span> <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;{n=split($1,a,&quot;/&quot;); infile2=gensub(&quot;_1\\.&quot;, &quot;_2.&quot;, &quot;1&quot;, $1); match(a[n], /(.+)_1\..*f.*q.gz/, sample_ids); printf &quot;%s\t%s\t1\t4\tPE\tHuman\tdouble\thalf\t%s\t%s\tNA\n&quot;, sample_ids[1], sample_ids[1], $1, infile2}&#39;</span> <span class="kw">|</span> <span class="fu">cat</span> <span class="op">&lt;(</span><span class="ex">curl</span> https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv<span class="op">)</span> - <span class="op">&gt;</span> <span class="va">$BATCH</span>.tsv</span>
+<span id="cb7-7"><a href="#cb7-7"></a><span class="co"># WORK_DIR=/30days/ibar/data/Human/WWR </span></span>
+<span id="cb7-8"><a href="#cb7-8"></a><span class="va">WORK_DIR=</span>/30days/sallywasef/WWR <span class="co"># This was run on Sally&#39;s Awoonga account</span></span>
+<span id="cb7-9"><a href="#cb7-9"></a></span>
+<span id="cb7-10"><a href="#cb7-10"></a><span class="va">REF_DIR=</span><span class="st">&quot;/30days/ibar/data/Human/reference_genomes&quot;</span></span>
+<span id="cb7-11"><a href="#cb7-11"></a><span class="va">REF=</span><span class="st">&quot;GRCh38&quot;</span></span>
+<span id="cb7-12"><a href="#cb7-12"></a><span class="va">GENOME=</span><span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">&quot;</span></span>
+<span id="cb7-13"><a href="#cb7-13"></a><span class="bu">[</span> <span class="ot">!</span> <span class="ot">-s</span> <span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">.fasta&quot;</span><span class="bu"> ]</span> <span class="kw">&amp;&amp;</span> <span class="ex">pigz</span> -cd <span class="va">$(</span><span class="fu">find</span> <span class="va">$REF_DIR</span> -iname <span class="st">&quot;*</span><span class="va">$REF</span><span class="st">*.f*a.gz&quot;</span><span class="va">)</span> <span class="op">&gt;</span> <span class="va">$GENOME</span>.fasta</span>
+<span id="cb7-14"><a href="#cb7-14"></a><span class="bu">[</span> <span class="ot">!</span> <span class="ot">-s</span> <span class="st">&quot;</span><span class="va">$REF_DIR</span><span class="st">/</span><span class="va">$REF</span><span class="st">.gff&quot;</span><span class="bu"> ]</span> <span class="kw">&amp;&amp;</span> <span class="ex">pigz</span> -cd <span class="va">$(</span><span class="fu">find</span> <span class="va">$REF_DIR</span> -iname <span class="st">&quot;*</span><span class="va">$REF</span><span class="st">*.gff*.gz&quot;</span><span class="va">)</span> <span class="op">&gt;</span> <span class="va">$GENOME</span>.gff</span>
+<span id="cb7-15"><a href="#cb7-15"></a><span class="co">#cat $REF_DIR/Dingo_MT_MH035676.1.fasta &gt;&gt; $REF_DIR/$REF.fasta</span></span>
+<span id="cb7-16"><a href="#cb7-16"></a></span>
+<span id="cb7-17"><a href="#cb7-17"></a></span>
+<span id="cb7-18"><a href="#cb7-18"></a><span class="va">FQ_DIR=</span>/30days/ibar/data/Human/WWR/fastq_files</span>
+<span id="cb7-19"><a href="#cb7-19"></a><span class="co"># create working folder for the run</span></span>
+<span id="cb7-20"><a href="#cb7-20"></a><span class="fu">mkdir</span> -p <span class="va">${WORK_DIR}</span>/<span class="va">${RUN}</span> <span class="co"># on Awoonga</span></span>
+<span id="cb7-21"><a href="#cb7-21"></a><span class="bu">cd</span> !$</span>
+<span id="cb7-22"><a href="#cb7-22"></a></span>
+<span id="cb7-23"><a href="#cb7-23"></a><span class="co"># create sample table</span></span>
+<span id="cb7-24"><a href="#cb7-24"></a><span class="co"># wget https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv</span></span>
+<span id="cb7-25"><a href="#cb7-25"></a><span class="fu">find</span> <span class="va">$FQ_DIR</span> -maxdepth 1 -name <span class="st">&quot;UWW1_B*_1*.f*q.gz&quot;</span> <span class="kw">|</span> <span class="fu">sort</span> <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;{n=split($1,a,&quot;/&quot;); infile2=gensub(&quot;_1\\.fa&quot;, &quot;_2.fa&quot;, &quot;1&quot;, $1); match(a[n], /(.+)_1\..*f.*q.gz/, sample_ids); printf &quot;Bone\t%s\t1\t4\tPE\tHuman\tdouble\thalf\t%s\t%s\tNA\n&quot;, sample_ids[1], $1, infile2}&#39;</span> <span class="kw">|</span> <span class="fu">cat</span> <span class="op">&lt;(</span><span class="ex">curl</span> https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv<span class="op">)</span> - <span class="op">&gt;</span> <span class="va">$BATCH</span>.tsv</span>
+<span id="cb7-26"><a href="#cb7-26"></a></span>
+<span id="cb7-27"><a href="#cb7-27"></a></span>
+<span id="cb7-28"><a href="#cb7-28"></a><span class="co"># Use the EAGER launcher to set run parameters and then edit the json file accordingly</span></span>
+<span id="cb7-29"><a href="#cb7-29"></a><span class="fu">sed</span> -r <span class="st">&quot;s/: </span><span class="dt">\&quot;</span><span class="st">.+\.tsv</span><span class="dt">\&quot;</span><span class="st">/: </span><span class="dt">\&quot;</span><span class="va">$BATCH</span><span class="st">.tsv</span><span class="dt">\&quot;</span><span class="st">/&quot;</span> <span class="va">$WORK_DIR</span>/WWR_aDNA_NF_default.json <span class="op">&gt;</span> <span class="va">$BATCH</span>.<span class="va">$REF</span>.<span class="va">$ALIGNER</span>.<span class="va">$GENOTYPER</span>.json</span>
+<span id="cb7-30"><a href="#cb7-30"></a><span class="co"># or in subsequent runs when the bam files already exist</span></span>
+<span id="cb7-31"><a href="#cb7-31"></a><span class="co"># sed -r &quot;s/: \&quot;.+\.tsv\&quot;/: \&quot;$BATCH.tsv\&quot;/&quot; ../Dingo_aDNA_NF_reuseBAM.json &gt; $BATCH.$REF.$ALIGNER.$GENOTYPER.json</span></span>
+<span id="cb7-32"><a href="#cb7-32"></a></span>
+<span id="cb7-33"><a href="#cb7-33"></a><span class="co"># run EAGER with the parameters file and custom profile (qris.config)</span></span>
+<span id="cb7-34"><a href="#cb7-34"></a><span class="ex">nextflow</span> run /home/ibar/.nextflow/assets/nf-core/eager_test/ -params-file <span class="va">$BATCH</span>.<span class="va">$REF</span>.<span class="va">$ALIGNER</span>.<span class="va">$GENOTYPER</span>.json -c /home/ibar/.nextflow/qris.config </span>
+<span id="cb7-35"><a href="#cb7-35"></a><span class="co"># or development version</span></span>
+<span id="cb7-36"><a href="#cb7-36"></a><span class="ex">nextflow-test</span> run /home/ibar/etc/tools/nf-core/eager -with-singularity <span class="va">$NXF_SINGULARITY_CACHEDIR</span>/nfcore-eager-2.2.2.img -params-file <span class="va">$BATCH</span>.<span class="va">$REF</span>.<span class="va">$ALIGNER</span>.<span class="va">$GENOTYPER</span>.json -c <span class="va">$HOME</span>/.nextflow/qris.config</span>
 <span id="cb7-37"><a href="#cb7-37"></a></span>
-<span id="cb7-38"><a href="#cb7-38"></a><span class="co"># Use the EAGER launcher to set run parameters and then edit the json file accordingly</span></span>
-<span id="cb7-39"><a href="#cb7-39"></a><span class="fu">sed</span> -r <span class="st">&quot;s/: </span><span class="dt">\&quot;</span><span class="st">.+\.tsv</span><span class="dt">\&quot;</span><span class="st">/: </span><span class="dt">\&quot;</span><span class="va">$BATCH</span><span class="st">.tsv</span><span class="dt">\&quot;</span><span class="st">/&quot;</span> <span class="va">$WORK_DIR</span>/WWR_aDNA_NF_default.json <span class="op">&gt;</span> <span class="va">$BATCH</span>.<span class="va">$REF</span>.<span class="va">$ALIGNER</span>.<span class="va">$GENOTYPER</span>.json</span>
-<span id="cb7-40"><a href="#cb7-40"></a><span class="co"># or in subsequent runs when the bam files already exist</span></span>
-<span id="cb7-41"><a href="#cb7-41"></a><span class="co"># sed -r &quot;s/: \&quot;.+\.tsv\&quot;/: \&quot;$BATCH.tsv\&quot;/&quot; ../Dingo_aDNA_NF_reuseBAM.json &gt; $BATCH.$REF.$ALIGNER.$GENOTYPER.json</span></span>
-<span id="cb7-42"><a href="#cb7-42"></a></span>
-<span id="cb7-43"><a href="#cb7-43"></a><span class="co"># run EAGER with the parameters file and custom profile (qris.config)</span></span>
-<span id="cb7-44"><a href="#cb7-44"></a><span class="ex">nextflow</span> run /home/ibar/.nextflow/assets/nf-core/eager_test/ -params-file <span class="va">$BATCH</span>.<span class="va">$REF</span>.<span class="va">$ALIGNER</span>.<span class="va">$GENOTYPER</span>.json -c /home/ibar/.nextflow/qris.config </span>
-<span id="cb7-45"><a href="#cb7-45"></a><span class="co"># or development version</span></span>
-<span id="cb7-46"><a href="#cb7-46"></a><span class="ex">nextflow-test</span> run <span class="va">$HOME</span>/etc/tools/nf-core/eager -with-singularity <span class="va">$NXF_SINGULARITY_CACHEDIR</span>/nfcore-eager-2.2.2.img -params-file <span class="va">$BATCH</span>.<span class="va">$REF</span>.<span class="va">$ALIGNER</span>.<span class="va">$GENOTYPER</span>.json -c <span class="va">$HOME</span>/.nextflow/qris.config</span></code></pre></div>
+<span id="cb7-38"><a href="#cb7-38"></a><span class="co"># After each job finishes, create a folder to copy the relevant results to CloudStor</span></span>
+<span id="cb7-39"><a href="#cb7-39"></a></span>
+<span id="cb7-40"><a href="#cb7-40"></a><span class="fu">mkdir</span> -p <span class="va">$WORK_DIR</span>/CloudStor_copy/<span class="va">$RUN</span>/results</span>
+<span id="cb7-41"><a href="#cb7-41"></a><span class="fu">find</span> <span class="va">$WORK_DIR</span>/<span class="va">$RUN</span> -maxdepth 1 -type f -name <span class="st">&quot;</span><span class="va">$BATCH</span><span class="st">*&quot;</span> <span class="kw">|</span> <span class="ex">parallel</span> ln -sf {} <span class="va">$WORK_DIR</span><span class="ex">/CloudStor_copy/</span><span class="va">$RUN</span><span class="ex">/</span></span>
+<span id="cb7-42"><a href="#cb7-42"></a><span class="fu">find</span> <span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>/results/ -maxdepth 1 -type d <span class="kw">|</span> <span class="fu">egrep</span> <span class="st">&quot;results/multiqc|results/qualimap|results/genotyping&quot;</span> <span class="kw">|</span> <span class="ex">parallel</span> ln -sf {} <span class="va">$WORK_DIR</span><span class="ex">/CloudStor_copy/</span><span class="va">$RUN</span><span class="ex">/results/</span></span>
+<span id="cb7-43"><a href="#cb7-43"></a></span>
+<span id="cb7-44"><a href="#cb7-44"></a><span class="co"># check number of SNPs in each sample</span></span>
+<span id="cb7-45"><a href="#cb7-45"></a><span class="bu">cd</span> CloudStor_copy</span>
+<span id="cb7-46"><a href="#cb7-46"></a><span class="fu">find</span> -L ./ -name *.vcf.gz  <span class="kw">|</span> <span class="ex">parallel</span> --dry-run <span class="st">&quot;printf </span><span class="dt">\&quot;</span><span class="st">{}\t%s\t%s\t%s\t%s\n</span><span class="dt">\&quot;</span><span class="st"> </span><span class="dt">\$</span><span class="st">(zcat {} | grep -v -c &#39;^#&#39;) </span><span class="dt">\$</span><span class="st">(zcat {} |  SnpSift varType - |  SnpSift filter </span><span class="dt">\&quot;</span><span class="st">( GEN[?].DP &gt; 5 ) &amp; ( GEN[?].GT != &#39;./.&#39; )</span><span class="dt">\&quot;</span><span class="st"> | gawk &#39;{if (</span><span class="dt">\$</span><span class="st">0 ~ /^#/ || (length(</span><span class="dt">\$</span><span class="st">4)==1 &amp;&amp; length(</span><span class="dt">\$</span><span class="st">5)==1)); print </span><span class="dt">\$</span><span class="st">0}&#39; | grep -v -c &#39;^#&#39;) </span><span class="dt">\$</span><span class="st">(zcat {} | SnpSift filter </span><span class="dt">\&quot;</span><span class="st">( GEN[?].DP &gt; 5 ) &amp; ( GEN[?].GT != &#39;./.&#39; ) &amp; ( QUAL &gt; 20 )</span><span class="dt">\&quot;</span><span class="st"> | gawk &#39;{if (</span><span class="dt">\$</span><span class="st">0 ~ /^#/ || (length(</span><span class="dt">\$</span><span class="st">4)==1 &amp;&amp; length(</span><span class="dt">\$</span><span class="st">5)==1)); print </span><span class="dt">\$</span><span class="st">0}&#39; | grep -v -c &#39;^#&#39;) </span><span class="dt">\$</span><span class="st">(zcat {} | SnpSift filter </span><span class="dt">\&quot;</span><span class="st">( GEN[?].DP &gt; 5 ) &amp; ( GEN[?].GT != &#39;./.&#39; ) &amp; ( QUAL &gt; 30 )</span><span class="dt">\&quot;</span><span class="st"> | gawk &#39;{if (</span><span class="dt">\$</span><span class="st">0 ~ /^#/ || (length(</span><span class="dt">\$</span><span class="st">4)==1 &amp;&amp; length(</span><span class="dt">\$</span><span class="st">5)==1)); print </span><span class="dt">\$</span><span class="st">0}&#39; | grep -v -c &#39;^#&#39;)&quot;</span> <span class="op">&gt;</span> vcf_stats.cmds</span>
+<span id="cb7-47"><a href="#cb7-47"></a></span>
+<span id="cb7-48"><a href="#cb7-48"></a><span class="va">VCF_JOB=$(</span><span class="ex">qsub</span> -J1-<span class="va">$(</span><span class="fu">cat</span> vcf_stats.cmds <span class="kw">|</span> <span class="fu">wc</span> -l<span class="va">)</span> -N vcf_stats -vCMDS_FILE=vcf_stats.cmds vcf_stats.pbspro <span class="kw">|</span> <span class="fu">egrep</span> -o <span class="st">&quot;^[0-9]+&quot;</span><span class="va">)</span></span>
+<span id="cb7-49"><a href="#cb7-49"></a></span>
+<span id="cb7-50"><a href="#cb7-50"></a><span class="fu">cat</span> <span class="op">&lt;(</span><span class="bu">printf</span> <span class="st">&quot;file\ttotal_snps\tDP_filtered_snps\tQUAL20_filtered_snps\tQUAL30_filtered_snps\n&quot;</span><span class="op">)</span> <span class="op">&lt;(</span><span class="fu">cat</span> vcf_stats.o<span class="va">$VCF_JOB</span>*<span class="op">)</span> <span class="op">&gt;</span> vcf_stats_<span class="va">$DATE</span>.txt</span>
+<span id="cb7-51"><a href="#cb7-51"></a><span class="fu">rm</span> vcf_stats.e<span class="va">$VCF_JOB</span>* vcf_stats.o<span class="va">$VCF_JOB</span>* </span>
+<span id="cb7-52"><a href="#cb7-52"></a></span>
+<span id="cb7-53"><a href="#cb7-53"></a><span class="co"># Finally copy the folder to CloudStor</span></span>
+<span id="cb7-54"><a href="#cb7-54"></a><span class="ex">rclone</span> sync -P -L <span class="va">$WORK_DIR</span>/CloudStor_copy/<span class="va">$RUN</span> CloudStor:Shared/AncientDNA/Human/WWR/EAGER_results/<span class="va">$RUN</span></span></code></pre></div>
+</div>
+<div id="match-snps-with-1000-genomes-data" class="section level4">
+<h4>Match SNPs with 1000 genomes data</h4>
+<p>SNP data of 3,205 individuals from the 1000 Genome project (30x coverage GRCh38 dataset) was downloaded from the <a href="https://www.internationalgenome.org/data-portal/data-collection/30x-grch38">data portal</a>. The files were then processed to remove duplicate variants and normalise multi-allelic variants, convert to <code>bcf</code> format and then to PLINK to filter for informative markers (see this <a href="https://www.biostars.org/p/335605/">tutorial on BioStars</a>).</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1"></a><span class="co"># download reference genome</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a><span class="va">REF=</span>GRCh38_full_analysis_set_plus_decoy_hla.fa</span>
+<span id="cb8-3"><a href="#cb8-3"></a><span class="fu">mkdir</span> -p ~/data/Q1369/Genomes/Human</span>
+<span id="cb8-4"><a href="#cb8-4"></a><span class="bu">cd</span> ~/data/Q1369/Genomes/Human</span>
+<span id="cb8-5"><a href="#cb8-5"></a><span class="fu">wget</span> ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/GRCh38_reference_genome/<span class="va">$REF</span></span>
+<span id="cb8-6"><a href="#cb8-6"></a><span class="va">CONDA_NAME=</span>snp_tools</span>
+<span id="cb8-7"><a href="#cb8-7"></a><span class="ex">conda</span> activate <span class="va">$CONDA_NAME</span></span>
+<span id="cb8-8"><a href="#cb8-8"></a><span class="ex">samtools</span> faidx <span class="va">$REF</span></span>
+<span id="cb8-9"><a href="#cb8-9"></a><span class="va">GENOME=$HOME</span>/data/Q1369/Genomes/Human/<span class="va">$REF</span></span>
+<span id="cb8-10"><a href="#cb8-10"></a><span class="co"># download vcf files to Awoonga (Sally&#39;s account)</span></span>
+<span id="cb8-11"><a href="#cb8-11"></a><span class="fu">mkdir</span> -p ~/data/Q1369/Genomes/SNP_db/igsr_30x_GRCh38 </span>
+<span id="cb8-12"><a href="#cb8-12"></a><span class="bu">cd</span> !$</span>
+<span id="cb8-13"><a href="#cb8-13"></a><span class="co"># mkdir vcf_test_reports</span></span>
+<span id="cb8-14"><a href="#cb8-14"></a><span class="co"># copy the file containing the links or download from the data portal at https://www.internationalgenome.org/data-portal/data-collection/30x-grch38</span></span>
+<span id="cb8-15"><a href="#cb8-15"></a><span class="co"># download the files</span></span>
+<span id="cb8-16"><a href="#cb8-16"></a><span class="fu">tail</span> -n +2 igsr_30x_GRCh38.tsv <span class="kw">|</span> <span class="fu">cut</span> -f 1 <span class="kw">|</span> <span class="fu">grep</span> -v <span class="st">&quot;.tbi$&quot;</span> <span class="kw">|</span> <span class="ex">parallel</span> --dry-run <span class="st">&quot;conda activate </span><span class="va">$CONDA_NAME</span><span class="st">; wget -c {} &amp;&amp; wget -c {}.tbi &amp;&amp; gzip -t {/} &amp;&amp; mv {/}* </span><span class="va">$DATA_DIR</span><span class="st">/&quot;</span> <span class="op">&gt;</span> get_vcfs.cmds</span>
+<span id="cb8-17"><a href="#cb8-17"></a><span class="va">GET_VCFS=$(</span><span class="ex">qsub</span> -J1-<span class="va">$(</span><span class="fu">cat</span> get_vcfs.cmds <span class="kw">|</span> <span class="fu">wc</span> -l<span class="va">)</span> -l select=1:ncpus=1:mem=8GB,walltime=5:00:00 -N get_vcf_files -vCMDS_FILE=get_vcfs.cmds ~/data/Q1369/Genomes/SNP_db/get_files.pbspro <span class="kw">|</span> <span class="fu">egrep</span> -o <span class="st">&quot;^[0-9]+&quot;</span><span class="va">)</span></span>
+<span id="cb8-18"><a href="#cb8-18"></a><span class="co"># verify that all jobs completed successfully</span></span>
+<span id="cb8-19"><a href="#cb8-19"></a><span class="fu">grep</span> <span class="st">&quot;ExitStatus&quot;</span> *.e<span class="va">$GET_VCFS</span>*</span></code></pre></div>
+<p>Alternatively (due to I/O errors in <code>/data/Q1369</code> folder), download, verify and process each file in the scratch folder (<code>/30days</code>).</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1"></a><span class="va">WORK_DIR=$HOME</span>/30days/WWR/1000g_data/igsr_30x_GRCh38</span>
+<span id="cb9-2"><a href="#cb9-2"></a><span class="va">DATA_DIR=$HOME</span>/data/Q1369/Genomes/SNP_db/igsr_x30_GRCh38 <span class="co"># (copy from Qdata currently not working)</span></span>
+<span id="cb9-3"><a href="#cb9-3"></a><span class="va">CONDA_NAME=</span>snp_tools</span>
+<span id="cb9-4"><a href="#cb9-4"></a><span class="co"># make working dir and prepare input files</span></span>
+<span id="cb9-5"><a href="#cb9-5"></a><span class="va">OUT_PRUNE=</span>pruned_plink_files</span>
+<span id="cb9-6"><a href="#cb9-6"></a><span class="va">OUT_NORM=</span>norm_bcfs</span>
+<span id="cb9-7"><a href="#cb9-7"></a><span class="fu">mkdir</span> -p <span class="va">$DATA_DIR</span>/<span class="va">$OUT_NORM</span></span>
+<span id="cb9-8"><a href="#cb9-8"></a><span class="fu">mkdir</span> -p <span class="va">$WORK_DIR</span>/<span class="va">$OUT_NORM</span>/<span class="va">$OUT_PRUNE</span></span>
+<span id="cb9-9"><a href="#cb9-9"></a><span class="bu">cd</span> <span class="va">$WORK_DIR</span></span>
+<span id="cb9-10"><a href="#cb9-10"></a><span class="va">REF=</span>GRCh38_full_analysis_set_plus_decoy_hla.fa</span>
+<span id="cb9-11"><a href="#cb9-11"></a><span class="fu">wget</span> ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/GRCh38_reference_genome/<span class="va">$REF</span></span>
+<span id="cb9-12"><a href="#cb9-12"></a><span class="ex">conda</span> activate <span class="va">$CONDA_NAME</span></span>
+<span id="cb9-13"><a href="#cb9-13"></a><span class="ex">samtools</span> faidx <span class="va">$REF</span></span>
+<span id="cb9-14"><a href="#cb9-14"></a></span>
+<span id="cb9-15"><a href="#cb9-15"></a><span class="va">RUN=</span>vcf_to_plink</span>
+<span id="cb9-16"><a href="#cb9-16"></a><span class="co"># mkdir test_vcf_reports</span></span>
+<span id="cb9-17"><a href="#cb9-17"></a><span class="fu">cp</span> /home/sallywasef/data/Q1369/Genomes/SNP_db/igsr_x30_GRCh38/*.tsv ./</span>
+<span id="cb9-18"><a href="#cb9-18"></a><span class="co"># with such a long processing - wrap this in a simple bash script and call it every time (this will allow proper error handling, etc.)</span></span>
+<span id="cb9-19"><a href="#cb9-19"></a><span class="fu">tail</span> -n +2 igsr_30x_GRCh38.tsv <span class="kw">|</span> <span class="fu">cut</span> -f 1 <span class="kw">|</span> <span class="fu">egrep</span> -v <span class="st">&quot;.tbi|chrY|chrX|others&quot;</span> <span class="kw">|</span> <span class="kw">\</span></span>
+<span id="cb9-20"><a href="#cb9-20"></a><span class="ex">parallel</span> -k --dry-run <span class="st">&quot;basename={= s:.*/::; s/.vcf.gz// =}; recall_medici </span><span class="va">$DATA_DIR</span><span class="st">/{/}* &amp;&amp; cp </span><span class="va">$DATA_DIR</span><span class="st">/{/}* ./ &amp;&amp; wget -c {} &amp;&amp; wget -c {}.tbi &amp;&amp;  gzip -t {/}  &amp;&amp; bcftools norm -m-any --check-ref w -f </span><span class="va">$REF</span><span class="st"> -Ou {/} | bcftools annotate -x ID -I +&#39;%CHROM:%POS:%REF:%ALT&#39; -Ou | bcftools norm -Ob --threads </span><span class="dt">\$</span><span class="st">NCPUS -m -snps --rm-dup both &gt; </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.norm.bcf.bz2 &amp;&amp; bcftools index </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.norm.bcf.bz2 &amp;&amp; bgzip -t </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.norm.bcf.bz2 &amp;&amp; rm {/}* &amp;&amp; plink --bcf </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.norm.bcf.bz2 --keep-allele-order --snps-only --vcf-idspace-to _ --double-id --allow-extra-chr 0 --split-x b38 no-fail --make-bed --out </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.genotypes &amp;&amp; plink --bfile </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.genotypes --maf 0.10 --indep 50 5 1.5 --out </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="va">$OUT_PRUNE</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.genotypes &amp;&amp; plink --bfile </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.genotypes --extract </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="va">$OUT_PRUNE</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.genotypes.prune.in --make-bed --out </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="va">$OUT_PRUNE</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.genotypes &amp;&amp; mv </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.norm.bcf.bz2* </span><span class="va">$DATA_DIR</span><span class="st">/</span><span class="va">$OUT_NORM</span><span class="st">/ ; rm </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">basename.norm.bcf.bz2*&quot;</span> <span class="op">&gt;</span> <span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds</span>
+<span id="cb9-21"><a href="#cb9-21"></a></span>
+<span id="cb9-22"><a href="#cb9-22"></a></span>
+<span id="cb9-23"><a href="#cb9-23"></a><span class="bu">echo</span> <span class="st">&#39;#!/bin/bash </span></span>
+<span id="cb9-24"><a href="#cb9-24"></a><span class="st">#PBS -V</span></span>
+<span id="cb9-25"><a href="#cb9-25"></a><span class="st">#PBS -W umask=002</span></span>
+<span id="cb9-26"><a href="#cb9-26"></a></span>
+<span id="cb9-27"><a href="#cb9-27"></a><span class="st">cd $WORKDIR</span></span>
+<span id="cb9-28"><a href="#cb9-28"></a><span class="st">source ~/.bashrc&#39;&quot;</span></span>
+<span id="cb9-29"><a href="#cb9-29"></a><span class="st">conda activate </span><span class="va">$CONDA_NAME</span></span>
+<span id="cb9-30"><a href="#cb9-30"></a><span class="st">gawk -v ARRAY_IND=</span><span class="dt">\$</span><span class="st">PBS_ARRAY_INDEX &#39;NR==ARRAY_IND&#39; </span><span class="dt">\$</span><span class="st">{CMDS_FILE} | bash&quot;</span> <span class="op">&gt;</span> array.pbspro</span>
+<span id="cb9-31"><a href="#cb9-31"></a></span>
+<span id="cb9-32"><a href="#cb9-32"></a><span class="bu">cd</span> pbs_logs</span>
+<span id="cb9-33"><a href="#cb9-33"></a><span class="co"># run for all files</span></span>
+<span id="cb9-34"><a href="#cb9-34"></a><span class="va">STEP_SIZE=</span>4</span>
+<span id="cb9-35"><a href="#cb9-35"></a><span class="va">PROCESS_VCFS=$(</span><span class="ex">qsub</span> -J1-<span class="va">$(</span><span class="fu">cat</span> <span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds <span class="kw">|</span> <span class="fu">wc</span> -l<span class="va">)</span>:<span class="va">$STEP_SIZE</span> -l select=1:ncpus=2:mem=16GB,walltime=20:00:00 -N <span class="va">${RUN:0:11}</span> -A qris-gu -vCMDS_FILE=<span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds array.pbspro -vWORKDIR=<span class="va">$WORK_DIR</span> <span class="kw">|</span> <span class="fu">egrep</span> -o <span class="st">&quot;^[0-9]+&quot;</span><span class="va">)</span></span>
+<span id="cb9-36"><a href="#cb9-36"></a><span class="va">PROCESS_VCFS2=$(</span><span class="ex">qsub</span> -J2-<span class="va">$(</span><span class="fu">cat</span> <span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds <span class="kw">|</span> <span class="fu">wc</span> -l<span class="va">)</span>:<span class="va">$STEP_SIZE</span> -l select=1:ncpus=2:mem=16GB,walltime=20:00:00 -N <span class="va">${RUN:0:11}</span> -W depend=afterok:<span class="va">$PROCESS_VCFS[]</span> -A qris-gu -vCMDS_FILE=<span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds array.pbspro <span class="kw">|</span> <span class="fu">egrep</span> -o <span class="st">&quot;^[0-9]+&quot;</span><span class="va">)</span></span>
+<span id="cb9-37"><a href="#cb9-37"></a><span class="va">PROCESS_VCFS3=$(</span><span class="ex">qsub</span> -J3-<span class="va">$(</span><span class="fu">cat</span> <span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds <span class="kw">|</span> <span class="fu">wc</span> -l<span class="va">)</span>:<span class="va">$STEP_SIZE</span> -l select=1:ncpus=2:mem=16GB,walltime=20:00:00 -N <span class="va">${RUN:0:11}</span> -W depend=afterok:<span class="va">$PROCESS_VCFS2[]</span> -A qris-gu -vCMDS_FILE=<span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds array.pbspro <span class="kw">|</span> <span class="fu">egrep</span> -o <span class="st">&quot;^[0-9]+&quot;</span><span class="va">)</span></span>
+<span id="cb9-38"><a href="#cb9-38"></a><span class="va">PROCESS_VCFS4=$(</span><span class="ex">qsub</span> -J4-<span class="va">$(</span><span class="fu">cat</span> <span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds <span class="kw">|</span> <span class="fu">wc</span> -l<span class="va">)</span>:<span class="va">$STEP_SIZE</span> -l select=1:ncpus=2:mem=16GB,walltime=20:00:00 -N <span class="va">${RUN:0:11}</span> -W depend=afterok:<span class="va">$PROCESS_VCFS3[]</span> -A qris-gu -vCMDS_FILE=<span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds array.pbspro <span class="kw">|</span> <span class="fu">egrep</span> -o <span class="st">&quot;^[0-9]+&quot;</span><span class="va">)</span></span>
+<span id="cb9-39"><a href="#cb9-39"></a><span class="co"># check for successful completion</span></span>
+<span id="cb9-40"><a href="#cb9-40"></a><span class="fu">grep</span> <span class="st">&quot;ExitStatus&quot;</span> <span class="va">${RUN:0:11}</span>.e*</span>
+<span id="cb9-41"><a href="#cb9-41"></a><span class="co"># remove empty log files</span></span>
+<span id="cb9-42"><a href="#cb9-42"></a><span class="fu">find</span> . -type f -size 0 -name <span class="st">&quot;</span><span class="va">${RUN:0:11}</span><span class="st">.*&quot;</span> -exec rm {} <span class="ex">+</span></span></code></pre></div>
+<p>The resulting WWR <code>vcf</code> file from EAGER was processed the same way to retain highly informative SNPs for comparison with the 1000 Genomes data. It may be better to merge the 2 datasets first based on common SNPs before pruning the files to increase the chance of finding overlapping markers. Need to try both approaches and compare.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1"></a><span class="va">WORK_DIR=$HOME</span>/30days/WWR/WWR_NF2_genotyping_process_27_01_2021/results/genotyping</span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="va">CONDA_NAME=</span>snp_tools</span>
+<span id="cb10-3"><a href="#cb10-3"></a><span class="co"># make working dir and prepare input files</span></span>
+<span id="cb10-4"><a href="#cb10-4"></a><span class="bu">cd</span> <span class="va">$WORK_DIR</span></span>
+<span id="cb10-5"><a href="#cb10-5"></a><span class="va">REF=</span>/30days/ibar/data/Human/reference_genomes/GRCh38.fasta</span>
+<span id="cb10-6"><a href="#cb10-6"></a><span class="ex">conda</span> activate <span class="va">$CONDA_NAME</span></span>
+<span id="cb10-7"><a href="#cb10-7"></a><span class="ex">samtools</span> faidx <span class="va">$REF</span></span>
+<span id="cb10-8"><a href="#cb10-8"></a><span class="va">OUT_PRUNE=</span>pruned_plink_files</span>
+<span id="cb10-9"><a href="#cb10-9"></a><span class="va">OUT_NORM=</span>norm_bcfs</span>
+<span id="cb10-10"><a href="#cb10-10"></a><span class="fu">mkdir</span> -p <span class="va">$OUT_NORM</span>/<span class="va">$OUT_PRUNE</span></span>
+<span id="cb10-11"><a href="#cb10-11"></a><span class="va">RUN=</span>vcf_to_plink</span>
+<span id="cb10-12"><a href="#cb10-12"></a><span class="va">BASENAME=</span>UWW1_B.haplotypecaller.norm</span>
+<span id="cb10-13"><a href="#cb10-13"></a><span class="co"># mkdir test_vcf_reports</span></span>
+<span id="cb10-14"><a href="#cb10-14"></a><span class="co"># convert gvcf to vcf (should start from original HaplotypeCaller gvcf)</span></span>
+<span id="cb10-15"><a href="#cb10-15"></a><span class="co">#echo &quot;source ~/.bashrc; conda activate $CONDA_NAME; cd \$PBS_O_WORKDIR; bcftools view -Oz -e &#39;ALT=\&quot;&lt;NON_REF&gt;\&quot;&#39; $BASENAME.bcf.bz2 &gt; $BASENAME.called_vars.vcf.gz &amp;&amp; bcftools view -Oz -i &#39;ALT=\&quot;&lt;NON_REF&gt;\&quot;&#39; $BASENAME.bcf.bz2 &gt; $BASENAME.g.vcf.gz &amp;&amp; gatk IndexFeatureFile -I $BASENAME.g.vcf.gz &amp;&amp; gatk --java-options &quot;-Xmx4g&quot; GenotypeGVCFs -R $REF -V $BASENAME.g.vcf.gz -O $BASENAME.vcf.gz&quot; | qsub -l select=1:ncpus=4:mem=16GB,walltime=5:00:00 -N gvcf_to_vcf -A qris-gu</span></span>
+<span id="cb10-16"><a href="#cb10-16"></a><span class="bu">cd</span> <span class="va">$OUT_NORM</span></span>
+<span id="cb10-17"><a href="#cb10-17"></a><span class="co"># extract only valid variants from the &quot;gvcf&quot; file</span></span>
+<span id="cb10-18"><a href="#cb10-18"></a><span class="ex">bcftools</span> view -Ov -e <span class="st">&#39;ALT=\&quot;&lt;NON_REF&gt;\&quot;&#39;</span> <span class="va">$BASENAME</span>.bcf.bz2 <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;{sub(/^([0-9]+)/, &quot;chr&amp;&quot;, $0); print $0}&#39;</span> <span class="kw">|</span> <span class="fu">egrep</span> <span class="st">&quot;^#|^chr&quot;</span> <span class="kw">|</span> <span class="ex">bcftools</span> view -Oz - <span class="op">&gt;</span> tmp.vcf.gz </span>
+<span id="cb10-19"><a href="#cb10-19"></a><span class="ex">bcftools</span> index tmp.vcf.gz</span>
+<span id="cb10-20"><a href="#cb10-20"></a><span class="ex">bcftools</span> annotate -x ID -I +<span class="st">&#39;%CHROM:%POS:%REF:%ALT&#39;</span> -Ou tmp.vcf.gz <span class="kw">|</span> <span class="ex">bcftools</span> view -Ob <span class="op">&gt;</span> <span class="va">$BASENAME</span>.called_vars.fix_chr.bcf.bz2</span>
+<span id="cb10-21"><a href="#cb10-21"></a></span>
+<span id="cb10-22"><a href="#cb10-22"></a><span class="co"># extract variants to use in filtering</span></span>
+<span id="cb10-23"><a href="#cb10-23"></a><span class="ex">bcftools</span> view UWW1_B.haplotypecaller.norm.called_vars.fix_chr.bcf.bz2 <span class="kw">|</span> <span class="fu">grep</span> -v <span class="st">&quot;^#&quot;</span> <span class="kw">|</span> <span class="fu">cut</span> -f 3 <span class="op">&gt;</span> UWW1_B.snplist</span>
+<span id="cb10-24"><a href="#cb10-24"></a></span>
+<span id="cb10-25"><a href="#cb10-25"></a><span class="co"># or this:</span></span>
+<span id="cb10-26"><a href="#cb10-26"></a><span class="ex">bcftools</span> view UWW1_B.haplotypecaller.norm.called_vars.fix_chr.bcf.bz2 <span class="kw">|</span> <span class="fu">grep</span> -v <span class="st">&quot;^#&quot;</span> <span class="kw">|</span> <span class="fu">gawk</span> <span class="st">&#39;{print $1, $2, $2}&#39;</span> <span class="op">&gt;</span> UWW1_B.snp_range.list</span>
+<span id="cb10-27"><a href="#cb10-27"></a></span>
+<span id="cb10-28"><a href="#cb10-28"></a><span class="co"># sort files and combine</span></span>
+<span id="cb10-29"><a href="#cb10-29"></a><span class="co">#echo &quot;source ~/.bashrc; conda activate $CONDA_NAME; cd \$PBS_O_WORKDIR; bcftools sort -T \$TMPDIR -Ob $BASENAME.vcf.gz &gt; $BASENAME.sorted.bcf.bz2 &amp;&amp;  cat $BASENAME.vcf.tmp | bcftools sort -T \$TMPDIR -Ob - &gt; $BASENAME.tmp.sorted.bcf.bz2 &amp;&amp; bcftools concat -a -d both -Ou $BASENAME.sorted.bcf.bz2 $BASENAME.tmp.sorted.bcf.bz2 | bcftools norm -m-any --check-ref w -f $REF -Ou | bcftools annotate -x ID -I +&#39;%CHROM:%POS:%REF:%ALT&#39; -Ou | bcftools norm -Ob --threads \$NCPUS $BASENAME.processed.bcf.bz2&quot; | qsub -l select=1:ncpus=4:mem=16GB,walltime=10:00:00 -N process_vcf -A qris-gu</span></span>
+<span id="cb10-30"><a href="#cb10-30"></a><span class="co"># &quot;fix&quot; chromosome information</span></span>
+<span id="cb10-31"><a href="#cb10-31"></a><span class="co">#bcftools view -Ov UWW1_B.haplotypecaller.norm.bcf.bz2 |  gawk &#39;{sub(/^([0-9]+)/, &quot;chr&amp;&quot;, $0); print $0}&#39; | egrep &quot;^#|^chr&quot; &gt; UWW1_B.haplotypecaller.norm.fix_chr.vcf</span></span>
+<span id="cb10-32"><a href="#cb10-32"></a><span class="co"># make plink file</span></span>
+<span id="cb10-33"><a href="#cb10-33"></a><span class="bu">cd</span> <span class="va">$WORK_DIR</span></span>
+<span id="cb10-34"><a href="#cb10-34"></a><span class="bu">echo</span> <span class="st">&quot;source ~/.bashrc; conda activate </span><span class="va">$CONDA_NAME</span><span class="st">; cd </span><span class="dt">\$</span><span class="st">PBS_O_WORKDIR; plink --bcf </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="va">$BASENAME</span><span class="st">.called_vars.fix_chr.bcf.bz2 --keep-allele-order --vcf-idspace-to _ --double-id --allow-extra-chr 0 --split-x b38 no-fail --make-bed --out </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="va">$BASENAME</span><span class="st">.called_vars.fix_chr.genotypes&quot;</span><span class="kw">|</span> <span class="ex">qsub</span> -l select=1:ncpus=4:mem=16GB,walltime=5:00:00 -N bcf_to_plink -A qris-gu</span></code></pre></div>
+<p>After the files have been downloaded, normalised and processed into <code>plink</code> files, they can be concatenated (while keeping SNPs only) to find overlapping variants with the WWR sample (produced by EAGER). This is done by converting the files to <code>bcf</code> format with <code>plink2</code>, then concatenating with <code>bcftools</code>, identifying common SNPs and finally converting back to <code>plink</code> format.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1"></a><span class="co"># find common vars</span></span>
+<span id="cb11-2"><a href="#cb11-2"></a><span class="va">WORK_DIR=$HOME</span>/30days/WWR/1000g_data/igsr_30x_GRCh38</span>
+<span id="cb11-3"><a href="#cb11-3"></a><span class="bu">cd</span> <span class="va">$WORK_DIR</span>/pbs_logs</span>
+<span id="cb11-4"><a href="#cb11-4"></a><span class="va">RUN=</span>find_common_vars</span>
+<span id="cb11-5"><a href="#cb11-5"></a><span class="fu">find</span> <span class="va">$WORK_DIR</span>/<span class="va">$OUT_NORM</span> -maxdepth 1 -name <span class="st">&quot;20201028_CCDG_14151_B01_GRM_WGS_2020-08-05*.bed&quot;</span> <span class="kw">|</span> <span class="ex">parallel</span> --dry-run <span class="st">&quot;plink2 --bfile {.} --extract </span><span class="va">$HOME</span><span class="st">/90days/WWR/WWR_NF2_genotyping_process_27_01_2021/results/genotyping/norm_bcfs/UWW1_B.snp_range.list --make-bed --out {.}.common_vars&quot;</span> <span class="op">&gt;</span> <span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds</span>
+<span id="cb11-6"><a href="#cb11-6"></a></span>
+<span id="cb11-7"><a href="#cb11-7"></a><span class="bu">cd</span> pbs_logs</span>
+<span id="cb11-8"><a href="#cb11-8"></a></span>
+<span id="cb11-9"><a href="#cb11-9"></a><span class="co"># run all commands</span></span>
+<span id="cb11-10"><a href="#cb11-10"></a><span class="va">FIND_COMMON_VARS=$(</span><span class="ex">qsub</span> -J1-<span class="va">$(</span><span class="fu">cat</span> <span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds <span class="kw">|</span> <span class="fu">wc</span> -l<span class="va">)</span> -l select=1:ncpus=2:mem=16GB,walltime=5:00:00 -N <span class="va">${RUN:0:11}</span> -A qris-gu -vCMDS_FILE=<span class="va">$WORK_DIR</span>/<span class="va">$RUN</span>.cmds -v WORKDIR=<span class="va">$WORK_DIR</span> array.pbspro <span class="kw">|</span> <span class="fu">egrep</span> -o <span class="st">&quot;^[0-9]+&quot;</span><span class="va">)</span></span>
+<span id="cb11-11"><a href="#cb11-11"></a><span class="co"># check for successful completion</span></span>
+<span id="cb11-12"><a href="#cb11-12"></a><span class="fu">grep</span> <span class="st">&quot;ExitStatus&quot;</span> <span class="va">${RUN:0:11}</span>.e*</span>
+<span id="cb11-13"><a href="#cb11-13"></a><span class="co"># remove empty log files</span></span>
+<span id="cb11-14"><a href="#cb11-14"></a><span class="fu">find</span> . -type f -size 0 -name <span class="st">&quot;</span><span class="va">${RUN:0:11}</span><span class="st">.*&quot;</span> -exec rm {} <span class="ex">+</span></span>
+<span id="cb11-15"><a href="#cb11-15"></a></span>
+<span id="cb11-16"><a href="#cb11-16"></a><span class="bu">cd</span> <span class="va">$WORK_DIR</span></span>
+<span id="cb11-17"><a href="#cb11-17"></a><span class="co"># merge files</span></span>
+<span id="cb11-18"><a href="#cb11-18"></a><span class="fu">find</span> <span class="va">$WORK_DIR</span>/<span class="va">$OUT_NORM</span> -maxdepth 1 -name <span class="st">&quot;*common_vars.bed&quot;</span> <span class="kw">|</span> <span class="fu">sed</span>  <span class="st">&#39;s/.bed//&#39;</span> <span class="op">&gt;</span> norm_plink_files_to_merge.list</span>
+<span id="cb11-19"><a href="#cb11-19"></a><span class="fu">find</span> <span class="va">$HOME</span>/90days/WWR/WWR_NF2_genotyping_process_27_01_2021/results/genotyping/norm_bcfs -name <span class="st">&quot;UWW1_B.haplotypecaller.norm.called_vars.fix_chr.genotypes.bed&quot;</span> <span class="kw">|</span> <span class="fu">sed</span>  <span class="st">&#39;s/.bed//&#39;</span> <span class="op">&gt;&gt;</span> norm_plink_files_to_merge.list</span>
+<span id="cb11-20"><a href="#cb11-20"></a></span>
+<span id="cb11-21"><a href="#cb11-21"></a><span class="bu">cd</span> pbs_logs</span>
+<span id="cb11-22"><a href="#cb11-22"></a><span class="co"># merge files and prune file</span></span>
+<span id="cb11-23"><a href="#cb11-23"></a><span class="bu">echo</span> <span class="st">&quot;outfile=igsr_30x_GRCh38_allChr.norm.common_vars; cd </span><span class="va">$WORK_DIR</span><span class="st">; source ~/.bashrc; conda activate snp_tools ; plink --merge-list norm_plink_files_to_merge.list --make-bed --snps-only --out </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">outfile &amp;&amp; plink --bfile </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">outfile --maf 0.10 --indep 50 5 1.5 --out </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="va">$OUT_PRUNE</span><span class="st">/</span><span class="dt">\$</span><span class="st">outfile &amp;&amp; plink --bfile </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="dt">\$</span><span class="st">outfile --extract </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="va">$OUT_PRUNE</span><span class="st">/</span><span class="dt">\$</span><span class="st">outfile.prune.in --make-bed --out </span><span class="va">$OUT_NORM</span><span class="st">/</span><span class="va">$OUT_PRUNE</span><span class="st">/</span><span class="dt">\$</span><span class="st">outfile&quot;</span> <span class="kw">|</span> <span class="ex">qsub</span> -l select=1:ncpus=2:mem=16GB,walltime=5:00:00 -N merge_prune -A qris-gu</span>
+<span id="cb11-24"><a href="#cb11-24"></a></span>
+<span id="cb11-25"><a href="#cb11-25"></a><span class="co"># make PCA out of pruned file</span></span>
+<span id="cb11-26"><a href="#cb11-26"></a><span class="ex">plink</span> --bfile <span class="va">$WORK_DIR</span>/<span class="va">$OUT_NORM</span>/<span class="va">$OUT_PRUNE</span>/igsr_30x_GRCh38_allChr.norm.common_vars --pca</span></code></pre></div>
+</div>
+<div id="pca-analysis" class="section level4">
+<h4>PCA analysis</h4>
+<p>Import PCA data (produced by <code>PLINK</code>) and visualise by population.<br />
+Select only individuals from EUR populations (see <code>R_1000g.R</code> file), to try and identify the sample’s origin by its clustering.</p>
+</div>
+<div id="variant-annotation" class="section level4">
+<h4>Variant Annotation</h4>
+<p>Annotate the variants with SnpEff/SnpSift</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1"></a><span class="ex">java</span> -jar SnpSift.jar annotate -dbsnp file.vcf \</span>
+<span id="cb12-2"><a href="#cb12-2"></a>    <span class="kw">|</span> <span class="ex">java</span> -Xmx8g -jar snpEff.jar eff -v GRCh37.75 - \</span>
+<span id="cb12-3"><a href="#cb12-3"></a>    <span class="kw">|</span> <span class="ex">java</span> -jar SnpSift.jar filter <span class="st">&quot;! exists ID&quot;</span> \</span>
+<span id="cb12-4"><a href="#cb12-4"></a>    <span class="op">&gt;</span> file.ann.not_in_dbSnp.vcf</span></code></pre></div>
 <div id="refs" class="references hanging-indent">
 <div id="ref-cahillGenomicEvidenceWidespread2018">
 <p>Cahill JA, Heintzman PD, Harris K, et al. (2018) Genomic Evidence of Widespread Admixture from Polar Bears into Brown Bears during the Last Ice Age. Mol Biol Evol 35:1120–1129. doi: <a href="https://doi.org/10.1093/molbev/msy018">10.1093/molbev/msy018</a></p>

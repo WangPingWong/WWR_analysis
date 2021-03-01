@@ -46,7 +46,7 @@ fontFmt = function(x,font="consolas"){
 3. Reads deduplication  
 4. Variant calling and filtration  
 5. Produce variant statistics and assessment  
-6. Match SNPs with existing databases  
+6. Match SNPs with existing databases (1000 genome European set)  
 
 ### Ancient DNA specific considerations
 1. Assess insert size with BBmerge/BBmap (see [this thread](https://www.biostars.org/p/284302/))  
@@ -55,6 +55,7 @@ fontFmt = function(x,font="consolas"){
 4. Assess alignment with Qualimap (Maybe treat as single-end if too many pairs are being dropped).  
 5. Assess DNA damage with MapDamage   
 6. Call SNPs from nuclear genome  
+7. Create pseudo-haploid representation of the genome?
 
 
 ## Methods
@@ -91,7 +92,7 @@ CONDA_NAME=aDNA #align for alignments and popgen for popgen analysis
 conda create -y -n $CONDA_NAME
 conda install -y -n $CONDA_NAME blast fastqc multiqc bioawk bbmap bowtie2 bwa bwa-mem2 cutadapt trimmomatic samtools samblaster biobambam sambamba=0.6.6 picard sequencetools mapdamage2 nextflow qualimap mawk p7zip pandas numpy
 # create an environment to process and analyse variants
-conda create -n snp_tools vcftools bcftools gatk4=4.1.9.0 freebayes snpsift stack plink admixtools admixture structure eigensoft # scikit-learn=0.18.2
+conda create -n snp_tools samtools vcftools bcftools gatk4=4.1.9.0 freebayes snpsift stack plink admixtools admixture structure eigensoft vcfanno vt # scikit-learn=0.18.2
 # conda create -n finestructure finestructure fineradstructure 
 # conda create -n faststructure faststructure
 # activate environment and cleanup
@@ -486,46 +487,36 @@ zcat ${BATCH}.${ALIGNER}.${REF}.DP5.GT.snps.vcf.gz | grep -c -v "^##" # 1795
 ```
 
 
-#### Combined samples
-Once the samples were confirmed to be of the same individual and no contaminations, we can combine the raw sequencing data and run the pipeline as a single sample.
+#### Combine samples
+Once the samples were confirmed to be of the same individual and no contaminations, we can combine data and run the pipeline as a single sample. It is best **NOT** to combine the raw data, but define all relevant samples (in our case Bone and Powdered Bone) as the same `Sample_name` in the EAGER sample table (leave them as separate libraries) and let EAGER handle the merging of the data (which is done only after each sample was processed, QC-assessed, mapped and dedupped individually)
 
 ```{bash eager_combined}
 conda install -n base nextflow nf-core
 DATE=`date +%d_%m_%Y`
-BATCH=WWR_NF_combined
-ALIGNER=bt2-local # bt2-local-N1  bwaaln  bwamem
+BATCH=WWR_NF2_combined
+ALIGNER=bwamem # bt2-local-N1  bwaaln  bwamem
 GENOTYPER=gatkhc # gatkug  freebayes
 RUN="${BATCH}_process_${DATE}" # day of run was 02_02_2019
-WORK_DIR=/30days/ibar/data/Human/WWR
-# Create tmp folder
-TMP_DIR=$HOME/30days/tmp && mkdir -p $TMP_DIR # on Awoonga
-# setup environment variable to run singularity and nextflow
-printf 'export SINGULARITY_CACHEDIR=/30days/ibar/.singularity\nexport SREGISTRY_DATABASE=$SINGULARITY_CACHEDIR\nexport NXF_SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR\nexport NXF_CONDA_CACHEDIR=/30days/ibar/.conda\nexport NXF_OPTS="-Xms1g -Xmx4g"' >> ~/.bashcr
-source ~/.bashrc
-mkdir -p $SINGULARITY_CACHEDIR $NXF_CONDA_CACHEDIR
+# WORK_DIR=/30days/ibar/data/Human/WWR 
+WORK_DIR=/30days/sallywasef/WWR # This was run on Sally's Awoonga account
 
 REF_DIR="/30days/ibar/data/Human/reference_genomes"
 REF="GRCh38"
-[ ! -s "$REF_DIR/$REF.fasta" ] && pigz -cd $(find $REF_DIR -iname "*$REF*.f*a.gz") > $REF_DIR/$REF.fasta
-[ ! -s "$REF_DIR/$REF.gff" ] && pigz -cd $(find $REF_DIR -iname "*$REF*.gff*.gz") > $REF_DIR/$REF.gff
+GENOME="$REF_DIR/$REF"
+[ ! -s "$REF_DIR/$REF.fasta" ] && pigz -cd $(find $REF_DIR -iname "*$REF*.f*a.gz") > $GENOME.fasta
+[ ! -s "$REF_DIR/$REF.gff" ] && pigz -cd $(find $REF_DIR -iname "*$REF*.gff*.gz") > $GENOME.gff
 #cat $REF_DIR/Dingo_MT_MH035676.1.fasta >> $REF_DIR/$REF.fasta
 
-GENOME="$REF_DIR/$REF"
-FQ_DIR=${WORK_DIR}/fastq_files
-cat $FQ_DIR/UWW1_*_1.fastq.gz > $FQ_DIR/combined_WWR_1.fastq.gz
-cat $FQ_DIR/UWW1_*_2.fastq.gz > $FQ_DIR/combined_WWR_2.fastq.gz
-# copy input files from CloudStor
-# ln -s ~/30days/data ~/aDNA # on Awoonga
-# mkdir -p $FQ_DIR && cd $FQ_DIR
-rclone copy -P CloudStor:aDNA/Human/WWR/fastq_files $FQ_DIR
 
+FQ_DIR=/30days/ibar/data/Human/WWR/fastq_files
 # create working folder for the run
 mkdir -p ${WORK_DIR}/${RUN} # on Awoonga
 cd !$
 
 # create sample table
 # wget https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv
-find $FQ_DIR -maxdepth 1 -name "combined*_1*.f*q.gz" | sort | gawk '{n=split($1,a,"/"); infile2=gensub("_1\\.", "_2.", "1", $1); match(a[n], /(.+)_1\..*f.*q.gz/, sample_ids); printf "%s\t%s\t1\t4\tPE\tHuman\tdouble\thalf\t%s\t%s\tNA\n", sample_ids[1], sample_ids[1], $1, infile2}' | cat <(curl https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv) - > $BATCH.tsv
+find $FQ_DIR -maxdepth 1 -name "UWW1_B*_1*.f*q.gz" | sort | gawk '{n=split($1,a,"/"); infile2=gensub("_1\\.fa", "_2.fa", "1", $1); match(a[n], /(.+)_1\..*f.*q.gz/, sample_ids); printf "Bone\t%s\t1\t4\tPE\tHuman\tdouble\thalf\t%s\t%s\tNA\n", sample_ids[1], $1, infile2}' | cat <(curl https://raw.githubusercontent.com/nf-core/test-datasets/eager/reference/TSV_template.tsv) - > $BATCH.tsv
+
 
 # Use the EAGER launcher to set run parameters and then edit the json file accordingly
 sed -r "s/: \".+\.tsv\"/: \"$BATCH.tsv\"/" $WORK_DIR/WWR_aDNA_NF_default.json > $BATCH.$REF.$ALIGNER.$GENOTYPER.json
@@ -535,6 +526,186 @@ sed -r "s/: \".+\.tsv\"/: \"$BATCH.tsv\"/" $WORK_DIR/WWR_aDNA_NF_default.json > 
 # run EAGER with the parameters file and custom profile (qris.config)
 nextflow run /home/ibar/.nextflow/assets/nf-core/eager_test/ -params-file $BATCH.$REF.$ALIGNER.$GENOTYPER.json -c /home/ibar/.nextflow/qris.config 
 # or development version
-nextflow-test run $HOME/etc/tools/nf-core/eager -with-singularity $NXF_SINGULARITY_CACHEDIR/nfcore-eager-2.2.2.img -params-file $BATCH.$REF.$ALIGNER.$GENOTYPER.json -c $HOME/.nextflow/qris.config
+nextflow-test run /home/ibar/etc/tools/nf-core/eager -with-singularity $NXF_SINGULARITY_CACHEDIR/nfcore-eager-2.2.2.img -params-file $BATCH.$REF.$ALIGNER.$GENOTYPER.json -c $HOME/.nextflow/qris.config
 
+# After each job finishes, create a folder to copy the relevant results to CloudStor
+
+mkdir -p $WORK_DIR/CloudStor_copy/$RUN/results
+find $WORK_DIR/$RUN -maxdepth 1 -type f -name "$BATCH*" | parallel ln -sf {} $WORK_DIR/CloudStor_copy/$RUN/
+find $WORK_DIR/$RUN/results/ -maxdepth 1 -type d | egrep "results/multiqc|results/qualimap|results/genotyping" | parallel ln -sf {} $WORK_DIR/CloudStor_copy/$RUN/results/
+
+# check number of SNPs in each sample
+cd CloudStor_copy
+find -L ./ -name *.vcf.gz  | parallel --dry-run "printf \"{}\t%s\t%s\t%s\t%s\n\" \$(zcat {} | grep -v -c '^#') \$(zcat {} |  SnpSift varType - |  SnpSift filter \"( GEN[?].DP > 5 ) & ( GEN[?].GT != './.' )\" | gawk '{if (\$0 ~ /^#/ || (length(\$4)==1 && length(\$5)==1)); print \$0}' | grep -v -c '^#') \$(zcat {} | SnpSift filter \"( GEN[?].DP > 5 ) & ( GEN[?].GT != './.' ) & ( QUAL > 20 )\" | gawk '{if (\$0 ~ /^#/ || (length(\$4)==1 && length(\$5)==1)); print \$0}' | grep -v -c '^#') \$(zcat {} | SnpSift filter \"( GEN[?].DP > 5 ) & ( GEN[?].GT != './.' ) & ( QUAL > 30 )\" | gawk '{if (\$0 ~ /^#/ || (length(\$4)==1 && length(\$5)==1)); print \$0}' | grep -v -c '^#')" > vcf_stats.cmds
+
+VCF_JOB=$(qsub -J1-$(cat vcf_stats.cmds | wc -l) -N vcf_stats -vCMDS_FILE=vcf_stats.cmds vcf_stats.pbspro | egrep -o "^[0-9]+")
+
+cat <(printf "file\ttotal_snps\tDP_filtered_snps\tQUAL20_filtered_snps\tQUAL30_filtered_snps\n") <(cat vcf_stats.o$VCF_JOB*) > vcf_stats_$DATE.txt
+rm vcf_stats.e$VCF_JOB* vcf_stats.o$VCF_JOB* 
+
+# Finally copy the folder to CloudStor
+rclone sync -P -L $WORK_DIR/CloudStor_copy/$RUN CloudStor:Shared/AncientDNA/Human/WWR/EAGER_results/$RUN
+```
+
+#### Match SNPs with 1000 genomes data 
+
+SNP data of 3,205 individuals from the 1000 Genome project (30x coverage GRCh38 dataset) was downloaded from the [data portal](https://www.internationalgenome.org/data-portal/data-collection/30x-grch38). The files were then processed to remove duplicate variants and normalise multi-allelic variants, convert to `bcf` format and then to PLINK to filter for informative markers (see this [tutorial on BioStars](https://www.biostars.org/p/335605/)).
+
+
+```{bash 1000g_download}
+# download reference genome
+REF=GRCh38_full_analysis_set_plus_decoy_hla.fa
+mkdir -p ~/data/Q1369/Genomes/Human
+cd ~/data/Q1369/Genomes/Human
+wget ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/GRCh38_reference_genome/$REF
+CONDA_NAME=snp_tools
+conda activate $CONDA_NAME
+samtools faidx $REF
+GENOME=$HOME/data/Q1369/Genomes/Human/$REF
+# download vcf files to Awoonga (Sally's account)
+mkdir -p ~/data/Q1369/Genomes/SNP_db/igsr_30x_GRCh38 
+cd !$
+# mkdir vcf_test_reports
+# copy the file containing the links or download from the data portal at https://www.internationalgenome.org/data-portal/data-collection/30x-grch38
+# download the files
+tail -n +2 igsr_30x_GRCh38.tsv | cut -f 1 | grep -v ".tbi$" | parallel --dry-run "conda activate $CONDA_NAME; wget -c {} && wget -c {}.tbi && gzip -t {/} && mv {/}* $DATA_DIR/" > get_vcfs.cmds
+GET_VCFS=$(qsub -J1-$(cat get_vcfs.cmds | wc -l) -l select=1:ncpus=1:mem=8GB,walltime=5:00:00 -N get_vcf_files -vCMDS_FILE=get_vcfs.cmds ~/data/Q1369/Genomes/SNP_db/get_files.pbspro | egrep -o "^[0-9]+")
+# verify that all jobs completed successfully
+grep "ExitStatus" *.e$GET_VCFS*
+
+```
+
+Alternatively (due to I/O errors in `/data/Q1369` folder), download, verify and process each file in the scratch folder (`/30days`).
+
+```{bash process_1000g_vcf}
+WORK_DIR=$HOME/30days/WWR/1000g_data/igsr_30x_GRCh38
+DATA_DIR=$HOME/data/Q1369/Genomes/SNP_db/igsr_x30_GRCh38 # (copy from Qdata currently not working)
+CONDA_NAME=snp_tools
+# make working dir and prepare input files
+OUT_PRUNE=pruned_plink_files
+OUT_NORM=norm_bcfs
+mkdir -p $DATA_DIR/$OUT_NORM
+mkdir -p $WORK_DIR/$OUT_NORM/$OUT_PRUNE
+cd $WORK_DIR
+REF=GRCh38_full_analysis_set_plus_decoy_hla.fa
+wget ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/GRCh38_reference_genome/$REF
+conda activate $CONDA_NAME
+samtools faidx $REF
+
+RUN=vcf_to_plink
+# mkdir test_vcf_reports
+cp /home/sallywasef/data/Q1369/Genomes/SNP_db/igsr_x30_GRCh38/*.tsv ./
+# with such a long processing - wrap this in a simple bash script and call it every time (this will allow proper error handling, etc.)
+tail -n +2 igsr_30x_GRCh38.tsv | cut -f 1 | egrep -v ".tbi|chrY|chrX|others" | \
+parallel -k --dry-run "basename={= s:.*/::; s/.vcf.gz// =}; recall_medici $DATA_DIR/{/}* && cp $DATA_DIR/{/}* ./ && wget -c {} && wget -c {}.tbi &&  gzip -t {/}  && bcftools norm -m-any --check-ref w -f $REF -Ou {/} | bcftools annotate -x ID -I +'%CHROM:%POS:%REF:%ALT' -Ou | bcftools norm -Ob --threads \$NCPUS -m -snps --rm-dup both > $OUT_NORM/\$basename.norm.bcf.bz2 && bcftools index $OUT_NORM/\$basename.norm.bcf.bz2 && bgzip -t $OUT_NORM/\$basename.norm.bcf.bz2 && rm {/}* && plink --bcf $OUT_NORM/\$basename.norm.bcf.bz2 --keep-allele-order --snps-only --vcf-idspace-to _ --double-id --allow-extra-chr 0 --split-x b38 no-fail --make-bed --out $OUT_NORM/\$basename.genotypes && plink --bfile $OUT_NORM/\$basename.genotypes --maf 0.10 --indep 50 5 1.5 --out $OUT_NORM/$OUT_PRUNE/\$basename.genotypes && plink --bfile $OUT_NORM/\$basename.genotypes --extract $OUT_NORM/$OUT_PRUNE/\$basename.genotypes.prune.in --make-bed --out $OUT_NORM/$OUT_PRUNE/\$basename.genotypes && mv $OUT_NORM/\$basename.norm.bcf.bz2* $DATA_DIR/$OUT_NORM/ ; rm $OUT_NORM/\$basename.norm.bcf.bz2*" > $WORK_DIR/$RUN.cmds
+
+
+echo '#!/bin/bash 
+#PBS -V
+#PBS -W umask=002
+
+cd $WORKDIR
+source ~/.bashrc'"
+conda activate $CONDA_NAME
+gawk -v ARRAY_IND=\$PBS_ARRAY_INDEX 'NR==ARRAY_IND' \${CMDS_FILE} | bash" > array.pbspro
+
+cd pbs_logs
+# run for all files
+STEP_SIZE=4
+PROCESS_VCFS=$(qsub -J1-$(cat $WORK_DIR/$RUN.cmds | wc -l):$STEP_SIZE -l select=1:ncpus=2:mem=16GB,walltime=20:00:00 -N ${RUN:0:11} -A qris-gu -vCMDS_FILE=$WORK_DIR/$RUN.cmds array.pbspro -vWORKDIR=$WORK_DIR | egrep -o "^[0-9]+")
+PROCESS_VCFS2=$(qsub -J2-$(cat $WORK_DIR/$RUN.cmds | wc -l):$STEP_SIZE -l select=1:ncpus=2:mem=16GB,walltime=20:00:00 -N ${RUN:0:11} -W depend=afterok:$PROCESS_VCFS[] -A qris-gu -vCMDS_FILE=$WORK_DIR/$RUN.cmds array.pbspro | egrep -o "^[0-9]+")
+PROCESS_VCFS3=$(qsub -J3-$(cat $WORK_DIR/$RUN.cmds | wc -l):$STEP_SIZE -l select=1:ncpus=2:mem=16GB,walltime=20:00:00 -N ${RUN:0:11} -W depend=afterok:$PROCESS_VCFS2[] -A qris-gu -vCMDS_FILE=$WORK_DIR/$RUN.cmds array.pbspro | egrep -o "^[0-9]+")
+PROCESS_VCFS4=$(qsub -J4-$(cat $WORK_DIR/$RUN.cmds | wc -l):$STEP_SIZE -l select=1:ncpus=2:mem=16GB,walltime=20:00:00 -N ${RUN:0:11} -W depend=afterok:$PROCESS_VCFS3[] -A qris-gu -vCMDS_FILE=$WORK_DIR/$RUN.cmds array.pbspro | egrep -o "^[0-9]+")
+# check for successful completion
+grep "ExitStatus" ${RUN:0:11}.e*
+# remove empty log files
+find . -type f -size 0 -name "${RUN:0:11}.*" -exec rm {} +
+```
+
+The resulting WWR `vcf` file from EAGER was processed the same way to retain highly informative SNPs for comparison with the 1000 Genomes data. It may be better to merge the 2 datasets first based on common SNPs before pruning the files to increase the chance of finding overlapping markers. Need to try both approaches and compare.
+
+```{bash process_WWR}
+WORK_DIR=$HOME/30days/WWR/WWR_NF2_genotyping_process_27_01_2021/results/genotyping
+CONDA_NAME=snp_tools
+# make working dir and prepare input files
+cd $WORK_DIR
+REF=/30days/ibar/data/Human/reference_genomes/GRCh38.fasta
+conda activate $CONDA_NAME
+samtools faidx $REF
+OUT_PRUNE=pruned_plink_files
+OUT_NORM=norm_bcfs
+mkdir -p $OUT_NORM/$OUT_PRUNE
+RUN=vcf_to_plink
+BASENAME=UWW1_B.haplotypecaller.norm
+# mkdir test_vcf_reports
+# convert gvcf to vcf (should start from original HaplotypeCaller gvcf)
+#echo "source ~/.bashrc; conda activate $CONDA_NAME; cd \$PBS_O_WORKDIR; bcftools view -Oz -e 'ALT=\"<NON_REF>\"' $BASENAME.bcf.bz2 > $BASENAME.called_vars.vcf.gz && bcftools view -Oz -i 'ALT=\"<NON_REF>\"' $BASENAME.bcf.bz2 > $BASENAME.g.vcf.gz && gatk IndexFeatureFile -I $BASENAME.g.vcf.gz && gatk --java-options "-Xmx4g" GenotypeGVCFs -R $REF -V $BASENAME.g.vcf.gz -O $BASENAME.vcf.gz" | qsub -l select=1:ncpus=4:mem=16GB,walltime=5:00:00 -N gvcf_to_vcf -A qris-gu
+cd $OUT_NORM
+# extract only valid variants from the "gvcf" file
+bcftools view -Ov -e 'ALT=\"<NON_REF>\"' $BASENAME.bcf.bz2 | gawk '{sub(/^([0-9]+)/, "chr&", $0); print $0}' | egrep "^#|^chr" | bcftools view -Oz - > tmp.vcf.gz 
+bcftools index tmp.vcf.gz
+bcftools annotate -x ID -I +'%CHROM:%POS:%REF:%ALT' -Ou tmp.vcf.gz | bcftools view -Ob > $BASENAME.called_vars.fix_chr.bcf.bz2
+
+# extract variants to use in filtering
+bcftools view UWW1_B.haplotypecaller.norm.called_vars.fix_chr.bcf.bz2 | grep -v "^#" | cut -f 3 > UWW1_B.snplist
+
+# or this:
+bcftools view UWW1_B.haplotypecaller.norm.called_vars.fix_chr.bcf.bz2 | grep -v "^#" | gawk '{print $1, $2, $2}' > UWW1_B.snp_range.list
+
+# sort files and combine
+#echo "source ~/.bashrc; conda activate $CONDA_NAME; cd \$PBS_O_WORKDIR; bcftools sort -T \$TMPDIR -Ob $BASENAME.vcf.gz > $BASENAME.sorted.bcf.bz2 &&  cat $BASENAME.vcf.tmp | bcftools sort -T \$TMPDIR -Ob - > $BASENAME.tmp.sorted.bcf.bz2 && bcftools concat -a -d both -Ou $BASENAME.sorted.bcf.bz2 $BASENAME.tmp.sorted.bcf.bz2 | bcftools norm -m-any --check-ref w -f $REF -Ou | bcftools annotate -x ID -I +'%CHROM:%POS:%REF:%ALT' -Ou | bcftools norm -Ob --threads \$NCPUS $BASENAME.processed.bcf.bz2" | qsub -l select=1:ncpus=4:mem=16GB,walltime=10:00:00 -N process_vcf -A qris-gu
+# "fix" chromosome information
+#bcftools view -Ov UWW1_B.haplotypecaller.norm.bcf.bz2 |  gawk '{sub(/^([0-9]+)/, "chr&", $0); print $0}' | egrep "^#|^chr" > UWW1_B.haplotypecaller.norm.fix_chr.vcf
+# make plink file
+cd $WORK_DIR
+echo "source ~/.bashrc; conda activate $CONDA_NAME; cd \$PBS_O_WORKDIR; plink --bcf $OUT_NORM/$BASENAME.called_vars.fix_chr.bcf.bz2 --keep-allele-order --vcf-idspace-to _ --double-id --allow-extra-chr 0 --split-x b38 no-fail --make-bed --out $OUT_NORM/$BASENAME.called_vars.fix_chr.genotypes"| qsub -l select=1:ncpus=4:mem=16GB,walltime=5:00:00 -N bcf_to_plink -A qris-gu
+
+```
+
+After the files have been downloaded, normalised and processed into `plink` files, they can be concatenated (while keeping SNPs only) to find overlapping variants with the WWR sample (produced by EAGER). This is done by converting the files to `bcf` format with `plink2`, then concatenating with `bcftools`, identifying common SNPs and finally converting back to `plink` format.
+
+```{bash merge_plinks}
+# find common vars
+WORK_DIR=$HOME/30days/WWR/1000g_data/igsr_30x_GRCh38
+cd $WORK_DIR/pbs_logs
+RUN=find_common_vars
+find $WORK_DIR/$OUT_NORM -maxdepth 1 -name "20201028_CCDG_14151_B01_GRM_WGS_2020-08-05*.bed" | parallel --dry-run "plink2 --bfile {.} --extract $HOME/90days/WWR/WWR_NF2_genotyping_process_27_01_2021/results/genotyping/norm_bcfs/UWW1_B.snp_range.list --make-bed --out {.}.common_vars" > $WORK_DIR/$RUN.cmds
+
+cd pbs_logs
+
+# run all commands
+FIND_COMMON_VARS=$(qsub -J1-$(cat $WORK_DIR/$RUN.cmds | wc -l) -l select=1:ncpus=2:mem=16GB,walltime=5:00:00 -N ${RUN:0:11} -A qris-gu -vCMDS_FILE=$WORK_DIR/$RUN.cmds -v WORKDIR=$WORK_DIR array.pbspro | egrep -o "^[0-9]+")
+# check for successful completion
+grep "ExitStatus" ${RUN:0:11}.e*
+# remove empty log files
+find . -type f -size 0 -name "${RUN:0:11}.*" -exec rm {} +
+
+cd $WORK_DIR
+# merge files
+find $WORK_DIR/$OUT_NORM -maxdepth 1 -name "*common_vars.bed" | sed  's/.bed//' > norm_plink_files_to_merge.list
+find $HOME/90days/WWR/WWR_NF2_genotyping_process_27_01_2021/results/genotyping/norm_bcfs -name "UWW1_B.haplotypecaller.norm.called_vars.fix_chr.genotypes.bed" | sed  's/.bed//' >> norm_plink_files_to_merge.list
+
+cd pbs_logs
+# merge files and prune file
+echo "outfile=igsr_30x_GRCh38_allChr.norm.common_vars; cd $WORK_DIR; source ~/.bashrc; conda activate snp_tools ; plink --merge-list norm_plink_files_to_merge.list --make-bed --snps-only --out $OUT_NORM/\$outfile && plink --bfile $OUT_NORM/\$outfile --maf 0.10 --indep 50 5 1.5 --out $OUT_NORM/$OUT_PRUNE/\$outfile && plink --bfile $OUT_NORM/\$outfile --extract $OUT_NORM/$OUT_PRUNE/\$outfile.prune.in --make-bed --out $OUT_NORM/$OUT_PRUNE/\$outfile" | qsub -l select=1:ncpus=2:mem=16GB,walltime=5:00:00 -N merge_prune -A qris-gu
+
+# make PCA out of pruned file
+plink --bfile $WORK_DIR/$OUT_NORM/$OUT_PRUNE/igsr_30x_GRCh38_allChr.norm.common_vars --pca
+```
+
+#### PCA analysis
+Import PCA data (produced by `PLINK`) and visualise by population.  
+Select only individuals from EUR populations (see `R_1000g.R` file), to try and identify the sample's origin by its clustering.
+
+```{r superpop_PCA}
+
+```
+
+#### Variant Annotation
+Annotate the variants with SnpEff/SnpSift
+```{bash var_annotation}
+java -jar SnpSift.jar annotate -dbsnp file.vcf \
+    | java -Xmx8g -jar snpEff.jar eff -v GRCh37.75 - \
+    | java -jar SnpSift.jar filter "! exists ID" \
+    > file.ann.not_in_dbSnp.vcf
 ```
