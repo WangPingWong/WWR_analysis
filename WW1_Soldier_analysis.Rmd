@@ -83,16 +83,16 @@ bash Miniconda3-latest-Linux-x86_64.sh
 # initialise conda
 source ~/.bashrc
 # install extra packages to the base environment
-conda install libgcc gnutls libuuid readline cmake git tmux libgfortran parallel gawk pigz rename 
+conda install libgcc gnutls libuuid readline cmake git tmux libgfortran parallel gawk pigz rename genozip
 # update conda
 conda update --all -y -n base
 
 # install bioinformatics software
 CONDA_NAME=aDNA #align for alignments and popgen for popgen analysis
 conda create -y -n $CONDA_NAME
-conda install -y -n $CONDA_NAME blast fastqc multiqc bioawk bbmap bowtie2 bwa bwa-mem2 cutadapt trimmomatic samtools samblaster biobambam sambamba=0.6.6 picard sequencetools mapdamage2 nextflow qualimap mawk p7zip pandas numpy
+conda install -y -n $CONDA_NAME blast fastqc multiqc bioawk bbmap bowtie2 bwa bwa-mem2 cutadapt trimmomatic samtools samblaster biobambam sambamba=0.6.6 picard sequencetools mapdamage2 nextflow qualimap mawk p7zip pandas numpy genozip
 # create an environment to process and analyse variants
-conda create -n snp_tools samtools vcftools bcftools gatk4=4.1.9.0 freebayes snpsift stack plink admixtools admixture structure eigensoft vcfanno vt # scikit-learn=0.18.2
+conda create -n snp_tools samtools vcftools bcftools gatk4=4.1.9.0 freebayes snpsift stack plink admixtools admixture structure eigensoft vcfanno vt genozip # scikit-learn=0.18.2
 # conda create -n finestructure finestructure fineradstructure 
 # conda create -n faststructure faststructure
 # activate environment and cleanup
@@ -500,8 +500,9 @@ RUN="${BATCH}_process_${DATE}" # day of run was 02_02_2019
 # WORK_DIR=/30days/ibar/data/Human/WWR 
 WORK_DIR=/30days/sallywasef/WWR # This was run on Sally's Awoonga account
 
-REF_DIR="/30days/ibar/data/Human/reference_genomes"
-REF="GRCh38"
+REF_DIR="$HOME/aDNA/Human/reference_genomes"
+REF=GRCh38_full_analysis_set_plus_decoy_hla.fa
+# REF="GRCh38"
 GENOME="$REF_DIR/$REF"
 [ ! -s "$REF_DIR/$REF.fasta" ] && pigz -cd $(find $REF_DIR -iname "*$REF*.f*a.gz") > $GENOME.fasta
 [ ! -s "$REF_DIR/$REF.gff" ] && pigz -cd $(find $REF_DIR -iname "*$REF*.gff*.gz") > $GENOME.gff
@@ -563,13 +564,27 @@ conda activate $CONDA_NAME
 samtools faidx $REF
 GENOME=$HOME/data/Q1369/Genomes/Human/$REF
 # download vcf files to Awoonga (Sally's account)
-mkdir -p ~/data/Q1369/Genomes/SNP_db/igsr_30x_GRCh38 
-cd !$
+WORK_DIR=$HOME/30days/WWR/1000g_data/igsr_30x_GRCh38
+mkdir -p $WORK_DIR/pbs_logs
+DATA_DIR=$HOME/data/Q1369/Genomes/SNP_db/igsr_30x_GRCh38 # (copy from Qdata currently not working)
+CONDA_NAME=snp_tools
+mkdir -p $DATA_DIR 
+cd $WORK_DIR
 # mkdir vcf_test_reports
 # copy the file containing the links or download from the data portal at https://www.internationalgenome.org/data-portal/data-collection/30x-grch38
-# download the files
-tail -n +2 igsr_30x_GRCh38.tsv | cut -f 1 | grep -v ".tbi$" | parallel --dry-run "conda activate $CONDA_NAME; wget -c {} && wget -c {}.tbi && gzip -t {/} && mv {/}* $DATA_DIR/" > get_vcfs.cmds
-GET_VCFS=$(qsub -J1-$(cat get_vcfs.cmds | wc -l) -l select=1:ncpus=1:mem=8GB,walltime=5:00:00 -N get_vcf_files -vCMDS_FILE=get_vcfs.cmds ~/data/Q1369/Genomes/SNP_db/get_files.pbspro | egrep -o "^[0-9]+")
+echo '#!/bin/bash 
+#PBS -V
+#PBS -W umask=002
+
+cd $WORKDIR
+source ~/.bashrc
+conda activate $CONDA_NAME'"
+gawk -v ARRAY_IND=\$PBS_ARRAY_INDEX 'NR==ARRAY_IND' \${CMDS_FILE} | bash" > array.pbspro
+
+# prepare the commands to download the files
+tail -n +2 $WORK_DIR/igsr_30x_GRCh38.tsv | cut -f 1 | grep -v ".tbi$" | parallel --dry-run "genozip -@ 2 -B 1 --force {} && mv {/}* $DATA_DIR/" > $WORK_DIR/get_vcfs.cmds
+cd pbs_logs
+GET_VCFS=$(qsub -V -J1-$(cat $WORK_DIR/get_vcfs.cmds | wc -l) -l select=1:ncpus=1:mem=8GB,walltime=5:00:00 -N get_vcf_files -v CONDA_NAME=$CONDA_NAME -vCMDS_FILE=$WORK_DIR/get_vcfs.cmds $WORK_DIR/array.pbspro | egrep -o "^[0-9]+")
 # verify that all jobs completed successfully
 grep "ExitStatus" *.e$GET_VCFS*
 
@@ -597,7 +612,7 @@ RUN=vcf_to_plink
 cp /home/sallywasef/data/Q1369/Genomes/SNP_db/igsr_x30_GRCh38/*.tsv ./
 # with such a long processing - wrap this in a simple bash script and call it every time (this will allow proper error handling, etc.)
 tail -n +2 igsr_30x_GRCh38.tsv | cut -f 1 | egrep -v ".tbi|chrY|chrX|others" | \
-parallel -k --dry-run "basename={= s:.*/::; s/.vcf.gz// =}; recall_medici $DATA_DIR/{/}* && cp $DATA_DIR/{/}* ./ && wget -c {} && wget -c {}.tbi &&  gzip -t {/}  && bcftools norm -m-any --check-ref w -f $REF -Ou {/} | bcftools annotate -x ID -I +'%CHROM:%POS:%REF:%ALT' -Ou | bcftools norm -Ob --threads \$NCPUS -m -snps --rm-dup both > $OUT_NORM/\$basename.norm.bcf.bz2 && bcftools index $OUT_NORM/\$basename.norm.bcf.bz2 && bgzip -t $OUT_NORM/\$basename.norm.bcf.bz2 && rm {/}* && plink --bcf $OUT_NORM/\$basename.norm.bcf.bz2 --keep-allele-order --snps-only --vcf-idspace-to _ --double-id --allow-extra-chr 0 --split-x b38 no-fail --make-bed --out $OUT_NORM/\$basename.genotypes && plink --bfile $OUT_NORM/\$basename.genotypes --maf 0.10 --indep 50 5 1.5 --out $OUT_NORM/$OUT_PRUNE/\$basename.genotypes && plink --bfile $OUT_NORM/\$basename.genotypes --extract $OUT_NORM/$OUT_PRUNE/\$basename.genotypes.prune.in --make-bed --out $OUT_NORM/$OUT_PRUNE/\$basename.genotypes && mv $OUT_NORM/\$basename.norm.bcf.bz2* $DATA_DIR/$OUT_NORM/ ; rm $OUT_NORM/\$basename.norm.bcf.bz2*" > $WORK_DIR/$RUN.cmds
+parallel -k --dry-run "basename={= s:.*/::; s/.vcf.gz// =}; recall_medici $DATA_DIR/{/}* && cp $DATA_DIR/{/}* ./ && genounzip -x {/.}.genozip  && bcftools norm -m-any --check-ref w -f $REF -Ou {/} | bcftools annotate -x ID -I +'%CHROM:%POS:%REF:%ALT' -Ou | bcftools norm -Ob --threads \$NCPUS -m -snps --rm-dup both > $OUT_NORM/\$basename.norm.bcf.bz2 && bcftools index $OUT_NORM/\$basename.norm.bcf.bz2 && bgzip -t $OUT_NORM/\$basename.norm.bcf.bz2 && rm {/}* && plink --bcf $OUT_NORM/\$basename.norm.bcf.bz2 --keep-allele-order --snps-only --vcf-idspace-to _ --double-id --allow-extra-chr 0 --split-x b38 no-fail --make-bed --out $OUT_NORM/\$basename.genotypes && plink --bfile $OUT_NORM/\$basename.genotypes --maf 0.10 --indep 50 5 1.5 --out $OUT_NORM/$OUT_PRUNE/\$basename.genotypes && plink --bfile $OUT_NORM/\$basename.genotypes --extract $OUT_NORM/$OUT_PRUNE/\$basename.genotypes.prune.in --make-bed --out $OUT_NORM/$OUT_PRUNE/\$basename.genotypes && mv $OUT_NORM/\$basename.norm.bcf.bz2* $DATA_DIR/$OUT_NORM/ ; rm $OUT_NORM/\$basename.norm.bcf.bz2*" > $WORK_DIR/$RUN.cmds
 
 
 echo '#!/bin/bash 
